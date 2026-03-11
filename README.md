@@ -1,5 +1,7 @@
 # PHANTOM — ZK Private Execution Layer for BTCFi on Starknet
 
+![PHANTOM Logo](phantom-zk.jpeg)
+
 **The first zero-knowledge private execution layer purpose-built for Bitcoin assets on Starknet.**
 
 ---
