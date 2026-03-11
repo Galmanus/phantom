@@ -31,7 +31,7 @@ struct LeafAppended {
     new_root: felt252,
 }
 
-const TREE_HEIGHT: u8 = 20;
+const TREE_HEIGHT: u8 = 32; // Depth 32 supports 2^32 = 4.3 billion leaves
 const ZERO_HASHES: [felt252; 21] = [
     // Pre-computed zero hashes for each level
     // Level 0: Poseidon(0, 0)

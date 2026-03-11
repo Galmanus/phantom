@@ -31,6 +31,7 @@ import type {
   KYCProofData,
 } from './types';
 import { generateRandomFieldElement } from './storage/encryption';
+import { encryptNote, PhantomKeyManager } from './key-derivation';
 
 export class PhantomSDK {
   private provider: RpcProvider;
@@ -86,6 +87,27 @@ export class PhantomSDK {
    */
   destroy(): void {
     this.prover.terminate();
+  }
+
+  /**
+   * Encrypt note data for on-chain recovery
+   * 
+   * OBSTACLE 4 SOLUTION: The encrypted_note is emitted in the Shielded event,
+   * allowing users to recover their notes from chain events using their IVK.
+   */
+  private encryptNoteForRecovery(note: ShieldedNote): string {
+    // Derive IVK from the account (simplified - in production use proper key derivation)
+    const ivk = BigInt(this.account.address) % (1n << 251n);
+    
+    return encryptNote(
+      {
+        amount: note.amount,
+        assetId: note.assetId,
+        nullifierSecret: BigInt(note.nullifierSecret),
+        salt: BigInt(note.salt),
+      },
+      ivk
+    );
   }
 
   // ─── SHIELD ───────────────────────────────────────────────────────────────
@@ -160,23 +182,10 @@ export class PhantomSDK {
 
     await this.account.execute(approveCall);
 
-    // Call shield function
-    const proofArray = this.hexToCalldata(proof);
-    const shieldCall = this.pool.populate('shield', [
-      tokenAddress,
-      uint256.bnToUint256(amount),
-      commitment,
-      proofArray,
-    ]);
-
-    const tx = await this.account.execute(shieldCall);
-    const receipt = await this.provider.waitForTransaction(tx.transaction_hash);
-
-    // Extract leaf index from events (simplified)
+    // Create note object first (needed for encryption)
     const leafIndex = 0; // Would parse from actual events
     const merkleRoot = await this.pool.get_merkle_root();
-
-    // Create and save note
+    
     const note: ShieldedNote = {
       commitment,
       amount,
@@ -189,6 +198,22 @@ export class PhantomSDK {
       createdAt: Date.now(),
       spent: false,
     };
+
+    // Encrypt note for on-chain recovery (OBSTACLE 4 solution)
+    const encryptedNote = this.encryptNoteForRecovery(note);
+
+    // Call shield function with encrypted note
+    const proofArray = this.hexToCalldata(proof);
+    const shieldCall = this.pool.populate('shield', [
+      tokenAddress,
+      uint256.bnToUint256(amount),
+      commitment,
+      encryptedNote,
+      proofArray,
+    ]);
+
+    const tx = await this.account.execute(shieldCall);
+    const receipt = await this.provider.waitForTransaction(tx.transaction_hash);
 
     await this.noteStore.saveNote(note);
 

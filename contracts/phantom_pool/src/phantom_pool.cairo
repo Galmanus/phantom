@@ -81,6 +81,7 @@ struct Shielded {
     asset_id: u8,
     leaf_index: u32,
     new_merkle_root: felt252,
+    encrypted_note: ByteArray, // Encrypted with user's IVK - enables note recovery from chain
 }
 
 #[derive(Drop, starknet::Event)]
@@ -166,6 +167,7 @@ mod phantom_pool_impl {
             asset: ContractAddress,
             amount: u256,
             commitment: felt252,
+            encrypted_note: ByteArray,
             proof: Span<felt252>,
         ) -> (felt252, u32);
 
@@ -222,6 +224,7 @@ mod phantom_pool_impl {
         asset: ContractAddress,
         amount: u256,
         commitment: felt252,
+        encrypted_note: ByteArray, // Encrypted note data for recovery
         proof: Span<felt252>,
     ) -> (felt252, u32) {
         // 1. Assert not paused
@@ -247,12 +250,13 @@ mod phantom_pool_impl {
         // 7. Store historical root
         self.historical_roots.write(new_root, true);
 
-        // 8. Emit event
+        // 8. Emit event with encrypted note for recovery
         self.emit(Shielded {
             commitment,
             asset_id,
             leaf_index,
             new_merkle_root: new_root,
+            encrypted_note,
         });
 
         (new_root, leaf_index)

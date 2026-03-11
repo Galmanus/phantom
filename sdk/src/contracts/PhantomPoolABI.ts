@@ -9,6 +9,7 @@ export const PhantomPoolABI = [
       { name: 'asset', type: 'ContractAddress' },
       { name: 'amount', type: 'u256' },
       { name: 'commitment', type: 'felt252' },
+      { name: 'encrypted_note', type: 'ByteArray' },
       { name: 'proof', type: 'Span<felt252>' },
     ],
     outputs: [
@@ -84,7 +85,7 @@ export const PhantomPoolABI = [
     type: 'event',
     name: 'Shielded',
     keys: ['commitment', 'asset_id'],
-    data: ['leaf_index', 'new_merkle_root'],
+    data: ['leaf_index', 'new_merkle_root', 'encrypted_note'],
   },
   {
     type: 'event',

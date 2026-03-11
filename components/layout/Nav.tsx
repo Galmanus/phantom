@@ -1,6 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { useState } from 'react'
+import { WalletConnector } from '@/components/wallet/WalletConnector'
 
 export function Nav() {
   const [isOpen, setIsOpen] = useState(false)
@@ -13,10 +14,11 @@ export function Nav() {
         </Link>
         <div className="hidden md:flex items-center gap-8">
           <Link href="/shield" className="font-mono text-sm uppercase tracking-wider text-muted hover:text-amber transition-colors">App</Link>
+          <Link href="/swap" className="font-mono text-sm uppercase tracking-wider text-muted hover:text-amber transition-colors">Swap</Link>
           <Link href="/yield" className="font-mono text-sm uppercase tracking-wider text-muted hover:text-amber transition-colors">Yield</Link>
           <Link href="/compliance" className="font-mono text-sm uppercase tracking-wider text-muted hover:text-amber transition-colors">Compliance</Link>
           <Link href="/developers" className="font-mono text-sm uppercase tracking-wider text-muted hover:text-amber transition-colors">Developers</Link>
-          <button className="btn-outline text-sm py-2 px-4">Connect Wallet</button>
+          <WalletConnector />
         </div>
         <button onClick={() => setIsOpen(!isOpen)} className="md:hidden text-muted">
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
