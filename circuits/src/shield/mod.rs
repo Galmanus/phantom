@@ -3,5 +3,7 @@
 pub mod circuit;
 pub mod witness;
 pub mod constraints;
+pub mod air;
 
 pub use circuit::*;
+pub use air::*;

@@ -1,9 +1,10 @@
 import type { Metadata } from 'next'
+
 import { syne, dmSans, jetbrainsMono } from './fonts'
 import './globals.css'
 import { Nav } from '@/components/layout/Nav'
 import { Footer } from '@/components/layout/Footer'
-import { StarknetProvider } from './providers/StarknetProvider'
+import { Providers } from './Providers'
 import { WalletSyncMount } from '@/components/layout/WalletSyncMount'
 import { WrongNetworkBanner } from '@/components/wallet/WrongNetworkBanner'
 
@@ -20,13 +21,13 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${syne.variable} ${dmSans.variable} ${jetbrainsMono.variable}`}>
       <body className="min-h-screen bg-void text-parchment antialiased">
-        <StarknetProvider>
+        <Providers>
           <WalletSyncMount />
           <WrongNetworkBanner />
           <Nav />
           <main className="min-h-screen">{children}</main>
           <Footer />
-        </StarknetProvider>
+        </Providers>
       </body>
     </html>
   )

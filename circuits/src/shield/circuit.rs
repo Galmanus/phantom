@@ -6,20 +6,7 @@
 //! Proves: commitment == Poseidon(amount, asset_id, nullifier_secret, salt)
 
 use crate::crypto::poseidon::{FieldElement, derive_commitment};
-// use stwo::core::backend::simd::SimdBackend;
-// use stwo::core::backend::Backend;
-// use stwo::core::channel::{Blake2sChannel, Channel};
-// use stwo::core::fields::m31::M31;
-// use stwo::core::fields::qm31::QM31;
-// use stwo::core::fri::FriConfig;
-// use stwo::core::pcs::PcsConfig;
-// use stwo::core::poly::circle::CanonicCoset;
-// use stwo::core::prover::prove;
-// use stwo::core::vcs::blake2_hash::Blake2sHasher;
-// use stwo::core::vcs::blake2_merkle::Blake2sMerkleHasher;
-// use stwo::core::ColumnVec;
-// use stwo::examples::poseidon::component::{PoseidonComponent, PoseidonLookupValues};
-// use stwo::examples::poseidon::Poseidon;
+use crate::shield::air::{ShieldAirConstraints, generate_trace};
 
 /// Shield circuit public inputs
 #[derive(Debug, Clone)]

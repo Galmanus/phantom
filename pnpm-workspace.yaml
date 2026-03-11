@@ -1,0 +1,8 @@
+packages:
+  - 'sdk'
+  - 'app'
+  - 'components'
+  - 'hooks'
+  - 'lib'
+  - 'store'
+  - 'types'

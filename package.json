@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "sdk:build": "cd sdk && npm run build",
+    "sdk:test": "cd sdk && npm run test",
+    "circuits:build": "cd circuits && cargo build",
+    "circuits:test": "cd circuits && cargo test"
   },
   "dependencies": {
     "@starknet-react/chains": "^5.0.3",

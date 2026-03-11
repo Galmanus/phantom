@@ -247,8 +247,8 @@ mod phantom_pool_impl {
         // 6. Mark commitment as exists
         self.commitment_exists.write(commitment, true);
 
-        // 7. Store historical root in ring buffer
-        self.root_history.write(new_root, true);
+        // 7. Store historical root in ring buffer (OBSTACLE 1: concurrency solution)
+        self._store_historical_root(new_root);
 
         // 8. Emit event with encrypted note for recovery
         self.emit(Shielded {
@@ -276,8 +276,9 @@ mod phantom_pool_impl {
         // 1. Assert nullifier not already spent (check BEFORE any state changes)
         assert(!self.nullifier_spent.read(nullifier), 'Nullifier already spent');
 
-        // 2. Assert merkle_root is a valid historical root
-        assert(self.root_history.read(merkle_root), 'Invalid merkle root');
+        // 2. Assert merkle_root is valid using ring buffer (OBSTACLE 1: concurrency solution)
+        // This allows proofs against ANY of the last 8 roots, solving race conditions
+        assert(self._is_valid_root(merkle_root), 'Invalid merkle root');
 
         // 3. Verify ZK proof
         let proof_valid = self._verify_unshield_proof(
@@ -298,13 +299,15 @@ mod phantom_pool_impl {
                 let (root, _) = self._append_to_merkle_tree(change_comm);
                 new_root = root;
                 self.commitment_exists.write(change_comm, true);
+                // Store new root in ring buffer
+                self._store_historical_root(new_root);
             },
             Option::None => {},
         };
 
-        // 6. Update current root if different
+        // 6. Update current root
         self.merkle_root.write(new_root);
-        self.root_history.write(new_root, true);
+        // Ring buffer is already updated above if needed
 
         // 7. Transfer tokens from contract to recipient
         self._transfer_tokens_to(asset, amount, recipient);
@@ -338,7 +341,8 @@ mod phantom_pool_impl {
         // Add output commitment to tree
         let (new_root, _) = self._append_to_merkle_tree(commitment_out);
         self.commitment_exists.write(commitment_out, true);
-        self.root_history.write(new_root, true);
+        // Store in ring buffer
+        self._store_historical_root(new_root);
         self.merkle_root.write(new_root);
 
         // Execute actual swap via AVNU (swap_params contains route data)
@@ -368,7 +372,8 @@ mod phantom_pool_impl {
         // Add commitment to tree
         let (new_root, _) = self._append_to_merkle_tree(commitment);
         self.commitment_exists.write(commitment, true);
-        self.root_history.write(new_root, true);
+        // Store in ring buffer
+        self._store_historical_root(new_root);
         self.merkle_root.write(new_root);
 
         // Deposit to protocol (Vesu/Uncap/Opus)
@@ -404,7 +409,8 @@ mod phantom_pool_impl {
         // Add new commitment (claimed yield)
         let (new_root, _) = self._append_to_merkle_tree(new_commitment);
         self.commitment_exists.write(new_commitment, true);
-        self.root_history.write(new_root, true);
+        // Store in ring buffer
+        self._store_historical_root(new_root);
         self.merkle_root.write(new_root);
 
         self.emit(YieldClaimed {
@@ -492,6 +498,65 @@ mod phantom_pool_impl {
 
     #[generate_trait]
     impl InternalImpl of InternalTrait {
+        /// Store a historical root in the ring buffer
+        /// Only keeps last MAX_VALID_ROOT_HISTORY roots
+        fn _store_historical_root(ref self: ContractState, root: felt252) {
+            if root == 0 {
+                return ();
+            }
+            
+            let current_idx = self.current_root_index.read();
+            let sequence = self.root_sequence.read();
+            
+            // Store root at current position in ring buffer
+            self.root_history.write(current_idx, root);
+            self.root_block_numbers.write(current_idx, starknet::get_block_number());
+            
+            // Move to next position (wrap around at MAX_VALID_ROOT_HISTORY)
+            let next_idx = (current_idx + 1) % MAX_VALID_ROOT_HISTORY;
+            self.current_root_index.write(next_idx);
+            self.root_sequence.write(sequence + 1);
+        }
+        
+        /// Check if a root is valid (exists in current or recent history)
+        fn _is_valid_root(self: @ContractState, root: felt252) -> bool {
+            if root == 0 {
+                return false;
+            }
+            
+            let current_idx = self.current_root_index.read();
+            let sequence = self.root_sequence.read();
+            
+            // Check up to MAX_VALID_ROOT_HISTORY roots
+            let mut i: u32 = 0;
+            loop {
+                if i >= MAX_VALID_ROOT_HISTORY {
+                    break;
+                }
+                
+                // Calculate actual index (going backwards in time)
+                let check_idx = if sequence > MAX_VALID_ROOT_HISTORY {
+                    (current_idx + MAX_VALID_ROOT_HISTORY - i - 1) % MAX_VALID_ROOT_HISTORY
+                } else {
+                    i
+                };
+                
+                let stored_root = self.root_history.read(check_idx);
+                if stored_root == root {
+                    return true;
+                }
+                
+                // Stop if we've checked all stored roots
+                if sequence > 0 && i >= sequence {
+                    break;
+                }
+                
+                i += 1;
+            };
+            
+            false
+        }
+        
         fn _verify_shield_proof(
             self: @ContractState,
             commitment: felt252,

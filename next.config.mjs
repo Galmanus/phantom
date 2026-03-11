@@ -31,9 +31,9 @@ const nextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'wasm-unsafe-eval'",
+              "script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval' 'unsafe-inline'",
               "style-src 'self' 'unsafe-inline'",
-              "connect-src 'self' https://*.infura.io https://*.alchemy.com https://api.avnu.fi https://*.vesu.xyz wss://*.starknet.io",
+              "connect-src 'self' https://*.infura.io https://*.alchemy.com https://api.avnu.fi https://*.vesu.xyz wss://*.starknet.io https://starknet-sepolia.public.blastapi.io",
               "img-src 'self' data: blob:",
               "font-src 'self'",
               "worker-src 'self' blob:",

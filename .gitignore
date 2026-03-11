@@ -37,3 +37,10 @@ Thumbs.db
 # Logs
 logs
 *.log
+
+# Rust
+circuits/target/
+wasm/target/
+
+# SDK dist
+sdk/dist/
