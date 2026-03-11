@@ -171,8 +171,8 @@ mod intent_matcher_impl {
         // In production: verify nullifier derivation from intent
         assert(nullifier != 0, 'Invalid nullifier');
         
-        // Remove intent
-        self.pending_intents.erase(commitment);
+        // Remove intent (set expiry to 0 to mark as cancelled)
+        self.pending_intents.write(commitment, 0);
         
         self.emit(IntentCancelled { commitment, nullifier });
     }
@@ -259,8 +259,8 @@ fn constructor(
     phantom_pool: ContractAddress,
     owner: ContractAddress,
 ) {
-    assert(phantom_pool != ContractAddress::ZERO, 'Invalid PhantomPool address');
-    assert(owner != ContractAddress::ZERO, 'Invalid owner address');
+    assert(phantom_pool != contract_address_const::<0>(), 'Invalid PhantomPool address');
+    assert(owner != contract_address_const::<0>(), 'Invalid owner address');
     
     self.phantom_pool.write(phantom_pool);
     self.owner.write(owner);

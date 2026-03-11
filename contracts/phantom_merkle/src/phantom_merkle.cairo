@@ -10,8 +10,8 @@ struct Storage {
     root: felt252,
     // Next leaf index (monotonically increasing)
     next_leaf_index: u32,
-    // Subtree roots for incremental updates (20 levels)
-    subtree_roots: felt252[20],
+    // Subtree roots for incremental updates (32 levels)
+    subtree_roots: LegacyMap<u8, felt252>,
     // Leaf commitments: leaf_index -> leaf_value
     leaves: LegacyMap<u32, felt252>,
     // Internal nodes for proof generation: (level, index) -> node_hash

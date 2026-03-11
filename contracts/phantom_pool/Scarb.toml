@@ -2,13 +2,13 @@
 name = "phantom_pool"
 version = "1.0.0"
 edition = "2024_07"
-cairo-version = "2.13.1"
+cairo-version = "2.15.0"
 
 [lib]
 path = "src/phantom_pool.cairo"
 
 [dependencies]
-starknet = "2.13.1"
+starknet = "2.15.0"
 openzeppelin = "0.20.0"
 
 [[target.starknet-contract]]

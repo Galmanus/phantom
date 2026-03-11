@@ -247,8 +247,8 @@ mod phantom_pool_impl {
         // 6. Mark commitment as exists
         self.commitment_exists.write(commitment, true);
 
-        // 7. Store historical root
-        self.historical_roots.write(new_root, true);
+        // 7. Store historical root in ring buffer
+        self.root_history.write(new_root, true);
 
         // 8. Emit event with encrypted note for recovery
         self.emit(Shielded {
@@ -277,7 +277,7 @@ mod phantom_pool_impl {
         assert(!self.nullifier_spent.read(nullifier), 'Nullifier already spent');
 
         // 2. Assert merkle_root is a valid historical root
-        assert(self.historical_roots.read(merkle_root), 'Invalid merkle root');
+        assert(self.root_history.read(merkle_root), 'Invalid merkle root');
 
         // 3. Verify ZK proof
         let proof_valid = self._verify_unshield_proof(
@@ -304,7 +304,7 @@ mod phantom_pool_impl {
 
         // 6. Update current root if different
         self.merkle_root.write(new_root);
-        self.historical_roots.write(new_root, true);
+        self.root_history.write(new_root, true);
 
         // 7. Transfer tokens from contract to recipient
         self._transfer_tokens_to(asset, amount, recipient);
@@ -338,7 +338,7 @@ mod phantom_pool_impl {
         // Add output commitment to tree
         let (new_root, _) = self._append_to_merkle_tree(commitment_out);
         self.commitment_exists.write(commitment_out, true);
-        self.historical_roots.write(new_root, true);
+        self.root_history.write(new_root, true);
         self.merkle_root.write(new_root);
 
         // Execute actual swap via AVNU (swap_params contains route data)
@@ -368,7 +368,7 @@ mod phantom_pool_impl {
         // Add commitment to tree
         let (new_root, _) = self._append_to_merkle_tree(commitment);
         self.commitment_exists.write(commitment, true);
-        self.historical_roots.write(new_root, true);
+        self.root_history.write(new_root, true);
         self.merkle_root.write(new_root);
 
         // Deposit to protocol (Vesu/Uncap/Opus)
@@ -404,7 +404,7 @@ mod phantom_pool_impl {
         // Add new commitment (claimed yield)
         let (new_root, _) = self._append_to_merkle_tree(new_commitment);
         self.commitment_exists.write(new_commitment, true);
-        self.historical_roots.write(new_root, true);
+        self.root_history.write(new_root, true);
         self.merkle_root.write(new_root);
 
         self.emit(YieldClaimed {
@@ -472,7 +472,7 @@ mod phantom_pool_impl {
 
     #[external(v0)]
     fn is_valid_historical_root(self: @ContractState, root: felt252) -> bool {
-        self.historical_roots.read(root)
+        self.root_history.read(root)
     }
 
     #[external(v0)]
