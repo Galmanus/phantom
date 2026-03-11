@@ -1,0 +1,15 @@
+[package]
+name = "phantom_verifier"
+version = "1.0.0"
+edition = "2024_07"
+cairo-version = "2.13.1"
+
+[lib]
+path = "src/phantom_verifier.cairo"
+
+[dependencies]
+starknet = "2.13.1"
+
+[[target.starknet-contract]]
+sierra = true
+casm = true

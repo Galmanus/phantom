@@ -1,0 +1,56 @@
+[package]
+name = "phantom-prover"
+version = "1.0.0"
+edition = "2024"
+rust-version = "1.85"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["std"]
+std = []
+wasm = ["wasm-bindgen", "getrandom/js", "console_error_panic_hook"]
+
+[dependencies]
+# Stwo for ZK proofs
+stwo = "2.1.0"
+
+# Cryptography
+ark-ff = "0.4"
+rand = "0.8"
+sha2 = "0.10"
+blake2 = "0.10"
+
+# WASM bindings
+wasm-bindgen = { version = "0.2", optional = true }
+console_error_panic_hook = { version = "0.1", optional = true }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+hex = "0.4"
+base64 = "0.21"
+
+# Utilities
+thiserror = "1.0"
+getrandom = { version = "0.2", optional = true }
+
+[dev-dependencies]
+criterion = "0.5"
+rand = "0.8"
+proptest = "1.4"
+
+[[bench]]
+name = "bench_prover"
+path = "tests/bench/bench_prover.rs"
+harness = false
+
+[profile.release]
+opt-level = 3
+lto = true
+
+[profile.release-small]
+inherits = "release"
+opt-level = "z"
+lto = true

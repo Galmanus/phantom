@@ -1,0 +1,19 @@
+[package]
+name = "phantom"
+version = "1.0.0"
+edition = "2024_07"
+cairo-version = "2.13.1"
+
+[workspace]
+members = [
+    "phantom_pool",
+    "phantom_merkle",
+    "phantom_verifier",
+    "compliance_oracle",
+    "intent_matcher",
+]
+
+[dependencies]
+starknet = "2.13.1"
+openzeppelin = "0.20.0"
+

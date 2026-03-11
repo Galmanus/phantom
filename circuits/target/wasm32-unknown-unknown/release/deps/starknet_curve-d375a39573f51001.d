@@ -1,0 +1,10 @@
+/home/galmanus/Documents/phantom/circuits/target/wasm32-unknown-unknown/release/deps/starknet_curve-d375a39573f51001.d: /home/galmanus/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/starknet-curve-0.4.2/src/lib.rs /home/galmanus/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/starknet-curve-0.4.2/src/ec_point.rs /home/galmanus/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/starknet-curve-0.4.2/src/curve_params.rs /home/galmanus/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/starknet-curve-0.4.2/src/../README.md
+
+/home/galmanus/Documents/phantom/circuits/target/wasm32-unknown-unknown/release/deps/libstarknet_curve-d375a39573f51001.rlib: /home/galmanus/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/starknet-curve-0.4.2/src/lib.rs /home/galmanus/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/starknet-curve-0.4.2/src/ec_point.rs /home/galmanus/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/starknet-curve-0.4.2/src/curve_params.rs /home/galmanus/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/starknet-curve-0.4.2/src/../README.md
+
+/home/galmanus/Documents/phantom/circuits/target/wasm32-unknown-unknown/release/deps/libstarknet_curve-d375a39573f51001.rmeta: /home/galmanus/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/starknet-curve-0.4.2/src/lib.rs /home/galmanus/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/starknet-curve-0.4.2/src/ec_point.rs /home/galmanus/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/starknet-curve-0.4.2/src/curve_params.rs /home/galmanus/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/starknet-curve-0.4.2/src/../README.md
+
+/home/galmanus/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/starknet-curve-0.4.2/src/lib.rs:
+/home/galmanus/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/starknet-curve-0.4.2/src/ec_point.rs:
+/home/galmanus/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/starknet-curve-0.4.2/src/curve_params.rs:
+/home/galmanus/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/starknet-curve-0.4.2/src/../README.md:

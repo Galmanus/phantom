@@ -1,0 +1,16 @@
+[package]
+name = "phantom_pool"
+version = "1.0.0"
+edition = "2024_07"
+cairo-version = "2.13.1"
+
+[lib]
+path = "src/phantom_pool.cairo"
+
+[dependencies]
+starknet = "2.13.1"
+openzeppelin = "0.20.0"
+
+[[target.starknet-contract]]
+sierra = true
+casm = true

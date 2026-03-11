@@ -1,0 +1,51 @@
+{
+  "name": "@phantom-btc/sdk",
+  "version": "1.0.0",
+  "description": "PHANTOM ZK Private Execution Layer SDK for BTCFi on Starknet",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src --ext .ts",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "starknet",
+    "zk-proof",
+    "privacy",
+    "bitcoin",
+    "defi",
+    "cairo"
+  ],
+  "author": "PHANTOM Team",
+  "license": "MIT",
+  "dependencies": {
+    "@noble/curves": "^2.0.1",
+    "idb": "^8.0.0",
+    "starknet": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0"
+  },
+  "peerDependencies": {
+    "starknet": "^6.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
