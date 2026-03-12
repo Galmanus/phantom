@@ -44,3 +44,4 @@ wasm/target/
 
 # SDK dist
 sdk/dist/
+target/
