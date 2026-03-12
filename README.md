@@ -36,11 +36,11 @@
 
 ---
 
-## 📑 Table of Contents
+## Table of Contents
 
 1. [Overview](#overview)
-2. [Why Private DeFi?](#why-private-defi)
-3. [What is STRK20?](#what-is-strk20)
+2. [Why Private DeFi](#why-private-defi)
+3. [What is STRK20](#what-is-strk20)
 4. [Architecture](#architecture)
 5. [Features](#features)
 6. [Tech Stack](#tech-stack)
@@ -54,7 +54,7 @@
 
 ---
 
-## 🔰 Overview
+## Overview
 
 PHANTOM is a **private BTC yield manager** built on Starknet that enables users to:
 
@@ -68,7 +68,7 @@ PHANTOM is a **private BTC yield manager** built on Starknet that enables users 
 
 ---
 
-## 🤔 Why Private DeFi?
+## Why Private DeFi?
 
 Every time you move tokens on a public blockchain, you leave a trail:
 
@@ -91,23 +91,23 @@ This is incompatible with how modern finance operates:
 
 ---
 
-## 💎 What is STRK20?
+## What is STRK20?
 
 **STRK20** is a native Starknet token standard that implements privacy at the protocol level:
 
 ### Key Properties
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    STRK20 Token Properties                       │
-├─────────────────────────────────────────────────────────────────┤
-│  ✓ Balances are encrypted by default                            │
-│  ✓ Transfer amounts are hidden from observers                   │
-│  ✓ Sender and receiver addresses are private                    │
-│  ✓ All transactions backed by ZK proofs                          │
-│  ✓ Single pool supports ALL ERC-20 tokens                       │
-│  ✓ Compatible with existing Starknet accounts                   │
-└─────────────────────────────────────────────────────────────────┘
++------------------------------------------------------------------+
+|                    STRK20 Token Properties                        |
++------------------------------------------------------------------+
+|  Balances are encrypted by default                                |
+|  Transfer amounts are hidden from observers                       |
+|  Sender and receiver addresses are private                        |
+|  All transactions backed by ZK proofs                             |
+|  Single pool supports ALL ERC-20 tokens                          |
+|  Compatible with existing Starknet accounts                        |
++------------------------------------------------------------------+
 ```
 
 ### How It Works
@@ -118,92 +118,92 @@ This is incompatible with how modern finance operates:
 
 ---
 
-## 🏗 Architecture
+## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                           PHANTOM Stack                              │
-└─────────────────────────────────────────────────────────────────────┘
++------------------------------------------------------------------+
+|                           PHANTOM Stack                          |
++------------------------------------------------------------------+
 
-                         ┌─────────────────┐
-                         │  Frontend (Next.js 14)                   │
-                         │  • React 18 + TypeScript                 │
-                         │  • Starknet React                        │
-                         │  • Tailwind CSS                          │
-                         └────────┬────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                        PHANTOM SDK                                  │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
-│  │ PhantomKeyManager│  │   NoteStore     │  │ProverWorkerClient│  │
-│  │  • PBKDF2       │  │  • IndexedDB    │  │  • WASM Runtime │  │
-│  │  • AES-GCM-256  │  │  • Encryption   │  │  • Stwo Prover  │  │
-│  │  • SNIP-12      │  │  • Notes        │  │  • Web Worker   │  │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘  │
-└────────┬────────────────────────────────────────────────┬──────────┘
-         │                                                │
-         ▼                                                ▼
-┌─────────────────────────────┐    ┌────────────────────────────────┐
-│    Cairo Contracts          │    │    Starknet Sequencer          │
-│  ┌────────────────────────┐ │    │                                │
-│  │  • Yield Router        │ │    │  • Verifies ZK proofs         │
-│  │  • Phantom Pool        │ │    │  • Executes transactions       │
-│  │  • Phantom Verifier    │ │    │  • Maintains state             │
-│  │  • Compliance Oracle   │ │    │                                │
-│  └────────────────────────┘ │    └────────────────────────────────┘
-└─────────────────────────────┘
+                         +-----------------+
+                         |  Frontend (Next.js 14)                   |
+                         |  + React 18 + TypeScript                 |
+                         |  + Starknet React                        |
+                         |  + Tailwind CSS                          |
+                         +--------+--------+
+                                  |
+                                  v
++------------------------------------------------------------------+
+|                        PHANTOM SDK                               |
+|  +-----------------+  +-----------------+  +-----------------+  |
+|  | PhantomKeyManager|  |   NoteStore     |  |ProverWorkerClient|  |
+|  |  + PBKDF2       |  |  + IndexedDB    |  |  + WASM Runtime |  |
+|  |  + AES-GCM-256  |  |  + Encryption   |  |  + Stwo Prover  |  |
+|  |  + SNIP-12      |  |  + Notes        |  |  + Web Worker   |  |
+|  +-----------------+  +-----------------+  +-----------------+  |
++---------+-------------------------------------------+----------+
+          |                                           |
+          v                                           v
++-----------------------------+    +--------------------------------+
+|    Cairo Contracts          |    |    Starknet Sequencer          |
+|  +-----------------------+ |    |                                |
+|  |  + Yield Router      | |    |  + Verifies ZK proofs         |
+|  |  + Phantom Pool      | |    |  + Executes transactions       |
+|  |  + Phantom Verifier  | |    |  + Maintains state             |
+|  |  + Compliance Oracle | |    |                                |
+|  +-----------------------+ |    +--------------------------------+
++-----------------------------+
 ```
 
 ### Component Diagram
 
 ```
 User Wallet
-     │
-     ▼
-┌──────────────────────────────────────────┐
-│           Next.js Frontend               │
-│  ┌────────┐ ┌────────┐ ┌──────────┐   │
-│  │ Shield │ │ Yield  │ │ Compliance│   │
-│  │ Page   │ │ Page   │ │   Page    │   │
-│  └────┬───┘ └────┬───┘ └─────┬────┘   │
-│       │         │           │          │
-│       └─────────┴───────────┘          │
-│                 │                       │
-│                 ▼                       │
-│          ┌──────────────┐              │
-│          │ PhantomSDK    │              │
-│          │              │              │
-│          │ • KeyManager │              │
-│          │ • NoteStore  │              │
-│          │ • ProverClient              │
-│          └──────┬───────┘              │
-└─────────────────┼───────────────────────┘
-                  │
-                  ▼
-┌──────────────────────────────────────────┐
-│           Web Worker (WASM)              │
-│  ┌────────────────────────────────────┐ │
-│  │ • Stwo Prover                      │ │
-│  │ • Poseidon Hash                    │ │
-│  │ • Merkle Tree                      │ │
-│  │ • ZK Circuit Execution            │ │
-│  └────────────────────────────────────┘ │
-└─────────────────┬───────────────────────┘
-                  │
-                  ▼
-┌──────────────────────────────────────────┐
-│         Starknet Blockchain             │
-│  ┌──────────────┐ ┌──────────────────┐  │
-│  │ YieldRouter │ │  Privacy Pool    │  │
-│  │   Contract  │ │    Contract      │  │
-│  └──────────────┘ └──────────────────┘  │
-└──────────────────────────────────────────┘
+     |
+     v
++------------------------------------------+
+|           Next.js Frontend               |
+|  +--------+ +--------+ +----------+    |
+|  | Shield | | Yield  | | Compliance|   |
+|  | Page   | | Page   | |   Page    |   |
+|  +----+---+ +----+---+ +-----+----+   |
+|       |         |          |           |
+|       +---------+----------+           |
+|                 |                     |
+|                 v                     |
+|          +--------------+            |
+|          | PhantomSDK   |            |
+|          |              |            |
+|          | + KeyManager |            |
+|          | + NoteStore  |            |
+|          | + ProverClient              |
+|          +-----+-------+            |
++------------------+-------------------+
+                   |
+                   v
++------------------------------------------+
+|           Web Worker (WASM)              |
+|  +------------------------------------+ |
+|  | + Stwo Prover                      | |
+|  | + Poseidon Hash                    | |
+|  | + Merkle Tree                      | |
+|  | + ZK Circuit Execution            | |
+|  +------------------------------------+ |
++------------------+-------------------+
+                   |
+                   v
++------------------------------------------+
+|         Starknet Blockchain             |
+|  +--------------+ +------------------+  |
+|  | YieldRouter  | |  Privacy Pool    |  |
+|  |   Contract   | |    Contract      |  |
+|  +--------------+ +------------------+  |
++------------------------------------------+
 ```
 
 ---
 
-## ✨ Features
+## Features
 
 ### 1. Shield (Private Deposits)
 
@@ -243,33 +243,33 @@ const strategies = await getStrategiesWithLiveAPY();
 ### 4. Anonymous Staking
 
 - Acquire liquid staking positions privately
-- Swap → Stake in one flow
+- Swap to Stake in one flow
 - No public address linked to staking position
 
 ### 5. Compliance
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Compliance Mechanism                          │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  User Joins Pool ──► Registers Encrypted Viewing Key          │
-│                              │                                   │
-│                              ▼                                   │
-│  Regulator Request ──► Third Party Auditing Entity              │
-│                              │                                   │
-│                              ▼                                   │
-│  Decrypt Specific Key ──► View User's Transaction History       │
-│                              │                                   │
-│                              ▼                                   │
-│  Other Users' Privacy ──► UNCHANGED ✓                          │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
++------------------------------------------------------------------+
+|                    Compliance Mechanism                          |
++------------------------------------------------------------------+
+|                                                                  |
+|  User Joins Pool + Register Encrypted Viewing Key              |
+|                              |                                   |
+|                              v                                   |
+|  Regulator Request + Third Party Auditing Entity              |
+|                              |                                   |
+|                              v                                   |
+|  Decrypt Specific Key + View User's Transaction History         |
+|                              |                                   |
+|                              v                                   |
+|  Other Users' Privacy + UNCHANGED                               |
+|                                                                  |
++------------------------------------------------------------------+
 ```
 
 ---
 
-## 🛠 Tech Stack
+## Tech Stack
 
 | Layer | Technology |
 |-------|------------|
@@ -298,7 +298,7 @@ Package Manager:  pnpm
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -383,107 +383,107 @@ bash scripts/build_wasm.sh
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
 ```
 phantom/
-├── app/                          # Next.js 14 App Router
-│   ├── compliance/              # Compliance page
-│   │   └── page.tsx
-│   ├── developers/              # Developer documentation
-│   ├── shield/                  # Shield page
-│   ├── swap/                    # Swap page
-│   ├── yield/                   # Yield page
-│   ├── providers/               # React providers
-│   │   ├── PhantomProvider.tsx
-│   │   └── StarknetProvider.tsx
-│   └── globals.css              # Tailwind styles
-│
-├── circuits/                    # Cairo ZK circuits
-│   ├── src/
-│   │   ├── crypto/             # Cryptographic primitives
-│   │   │   ├── poseidon.rs     # Poseidon hash
-│   │   │   ├── merkle.rs       # Merkle tree
-│   │   │   └── nullifier.rs    # Nullifier derivation
-│   │   ├── private_yield/      # Yield circuit
-│   │   ├── private_swap/       # Swap circuit
-│   │   └── compliance/          # Compliance circuit
-│   └── tests/                   # Circuit tests
-│
-├── contracts/                   # Cairo smart contracts
-│   ├── yield_router/           # Yield routing contract
-│   ├── compliance_oracle/       # Compliance oracle
-│   └── intent_matcher/         # Intent matching
-│
-├── sdk/                        # PHANTOM SDK (TypeScript)
-│   ├── src/
-│   │   ├── key-derivation.ts   # PBKDF2 + AES-GCM
-│   │   ├── PhantomSDK.ts        # Main SDK
-│   │   ├── storage/            # IndexedDB storage
-│   │   ├── proof/              # Prover worker client
-│   │   ├── integrations/        # DeFi protocol integrations
-│   │   └── strategies/         # Yield strategies
-│   └── tests/                  # SDK tests
-│
-├── hooks/                      # React hooks
-│   ├── useStrkBTC.ts          # strkBTC balance hook
-│   ├── useWalletSync.ts       # Wallet sync hook
-│   └── usePhantomTransaction.ts # Transaction hooks
-│
-├── lib/                        # Utilities
-│   ├── constants.ts            # Contract addresses
-│   ├── phantom-signing.ts     # Signing utilities
-│   └── wallet-errors.ts       # Error handling
-│
-├── store/                      # State management
-│   └── walletStore.ts          # Wallet state
-│
-├── public/
-│   ├── workers/
-│   │   └── prover.worker.ts    # WASM prover worker
-│   ├── phantom_prover.js       # Generated WASM bindings
-│   └── phantom_prover_bg.wasm  # Compiled WASM
-│
-├── wasm/                       # WASM crate
-│   └── src/
-│       └── lib.rs             # WASM entry point
-│
-├── scripts/
-│   └── build_wasm.sh          # WASM build script
-│
-└── Configuration Files
-    ├── package.json
-    ├── tsconfig.json
-    ├── tailwind.config.js
-    ├── next.config.mjs
-    ├── Scarb.toml
-    └── Cargo.toml
++--- app/                          # Next.js 14 App Router
+|   +--- compliance/              # Compliance page
+|   |   +--- page.tsx
+|   +--- developers/              # Developer documentation
+|   +--- shield/                  # Shield page
+|   +--- swap/                    # Swap page
+|   +--- yield/                   # Yield page
+|   +--- providers/               # React providers
+|   |   +--- PhantomProvider.tsx
+|   |   +--- StarknetProvider.tsx
+|   +--- globals.css              # Tailwind styles
+|
++--- circuits/                    # Cairo ZK circuits
+|   +--- src/
+|   |   +--- crypto/             # Cryptographic primitives
+|   |   |   +--- poseidon.rs     # Poseidon hash
+|   |   |   +--- merkle.rs       # Merkle tree
+|   |   |   +--- nullifier.rs    # Nullifier derivation
+|   |   +--- private_yield/      # Yield circuit
+|   |   +--- private_swap/       # Swap circuit
+|   |   +--- compliance/          # Compliance circuit
+|   +--- tests/                   # Circuit tests
+|
++--- contracts/                   # Cairo smart contracts
+|   +--- yield_router/           # Yield routing contract
+|   +--- compliance_oracle/       # Compliance oracle
+|   +--- intent_matcher/         # Intent matching
+|
++--- sdk/                        # PHANTOM SDK (TypeScript)
+|   +--- src/
+|   |   +--- key-derivation.ts   # PBKDF2 + AES-GCM
+|   |   +--- PhantomSDK.ts        # Main SDK
+|   |   +--- storage/            # IndexedDB storage
+|   |   +--- proof/              # Prover worker client
+|   |   +--- integrations/        # DeFi protocol integrations
+|   |   +--- strategies/         # Yield strategies
+|   +--- tests/                  # SDK tests
+|
++--- hooks/                      # React hooks
+|   +--- useStrkBTC.ts          # strkBTC balance hook
+|   +--- useWalletSync.ts       # Wallet sync hook
+|   +--- usePhantomTransaction.ts # Transaction hooks
+|
++--- lib/                        # Utilities
+|   +--- constants.ts            # Contract addresses
+|   +--- phantom-signing.ts     # Signing utilities
+|   +--- wallet-errors.ts       # Error handling
+|
++--- store/                      # State management
+|   +--- walletStore.ts          # Wallet state
+|
++--- public/
+|   +--- workers/
+|   |   +--- prover.worker.ts    # WASM prover worker
+|   +--- phantom_prover.js       # Generated WASM bindings
+|   +--- phantom_prover_bg.wasm  # Compiled WASM
+|
++--- wasm/                       # WASM crate
+|   +--- src/
+|       +--- lib.rs            # WASM entry point
+|
++--- scripts/
+|   +--- build_wasm.sh          # WASM build script
+|
++--- Configuration Files
+    +--- package.json
+    +--- tsconfig.json
+    +--- tailwind.config.js
+    +--- next.config.mjs
+    +--- Scarb.toml
+    +--- Cargo.toml
 ```
 
 ---
 
-## 🔒 Security Model
+## Security Model
 
 ### Threat Model
 
 PHANTOM assumes an **honest prover** model:
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                     Security Assumptions                          │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  1. User generates valid ZK proofs locally                    │
-│                                                                  │
-│  2. Prover runs in Web Worker (off main thread)               │
-│                                                                  │
-│  3. All proofs verified on-chain before state changes         │
-│                                                                  │
-│  4. Viewing keys encrypted with user's IVK                     │
-│                                                                  │
-│  5. No secret keys stored in localStorage                      │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
++------------------------------------------------------------------+
+|                     Security Assumptions                          |
++------------------------------------------------------------------+
+|                                                                  |
+|  1. User generates valid ZK proofs locally                     |
+|                                                                  |
+|  2. Prover runs in Web Worker (off main thread)               |
+|                                                                  |
+|  3. All proofs verified on-chain before state changes         |
+|                                                                  |
+|  4. Viewing keys encrypted with user's IVK                     |
+|                                                                  |
+|  5. No secret keys stored in localStorage                     |
+|                                                                  |
++------------------------------------------------------------------+
 ```
 
 ### Key Security Properties
@@ -504,7 +504,7 @@ PHANTOM assumes an **honest prover** model:
 
 ---
 
-## ⚖️ Compliance
+## Compliance
 
 PHANTOM is designed to work with regulatory requirements:
 
@@ -532,9 +532,9 @@ This is **not a backdoor** — it's a carefully scoped access mechanism that pre
 
 ---
 
-## 🗺️ Roadmap
+## Roadmap
 
-### Phase 1: Foundation (✅ Complete)
+### Phase 1: Foundation (Complete)
 - [x] Real Poseidon hash implementation
 - [x] Merkle tree with proofs
 - [x] Key derivation (PBKDF2)
@@ -562,9 +562,9 @@ This is **not a backdoor** — it's a carefully scoped access mechanism that pre
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md).
+We welcome contributions! Please see our Contributing Guide.
 
 ### Development Workflow
 
@@ -592,13 +592,13 @@ git push origin feature/my-feature
 
 ---
 
-## 📜 License
+## License
 
-MIT License — see [LICENSE](LICENSE) for details.
+MIT License — see LICENSE for details.
 
 ---
 
-## 🔗 Links
+## Links
 
 | Resource | URL |
 |----------|-----|
@@ -618,4 +618,4 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 ---
 
-*Built with 🧡 on Starknet | Cairo 2.15.0 | Next.js 14*
+*Built on Starknet | Cairo 2.15.0 | Next.js 14*
