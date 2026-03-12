@@ -2,9 +2,15 @@
 name = "yield_router"
 version = "1.0.0"
 edition = "2024_07"
-
-[dependencies]
-starknet = { git = "https://github.com/starknet-io/starknet-cairo" }
-openzeppelin = { git = "https://github.com/OpenZeppelin/cairo-contracts" }
+cairo-version = "2.15.0"
 
 [lib]
+path = "src/lib.cairo"
+
+[dependencies]
+starknet = "2.15.0"
+openzeppelin = "0.20.0"
+
+[[target.starknet-contract]]
+sierra = true
+casm = true

@@ -1,7 +1,8 @@
-// hooks/useWalletSync.ts
+// PHANTOM — Real implementation (no mocks)
+
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useCallback } from "react";
 import { useAccount, useNetwork } from "@starknet-react/core";
 import { useWalletStore } from "@/store/walletStore";
 
@@ -10,31 +11,38 @@ export function useWalletSync() {
   const { chain } = useNetwork();
   const { setWalletConnected, setWalletDisconnected, setPhantomKeys } = useWalletStore();
 
+  /**
+   * Initialize Phantom keys when wallet connects
+   * Uses real PBKDF2 key derivation via PhantomKeyManager
+   */
+  const initializePhantomKeys = useCallback(async (account: any, chainId: string) => {
+    if (!account || !address) {
+      return;
+    }
+
+    try {
+      // Dynamic import to avoid SSR issues
+      const { PhantomKeyManager } = await import('@/sdk/src/key-derivation');
+      const keyManager = await PhantomKeyManager.fromWallet(account);
+      
+      // Store IVK in walletStore for use by compliance and NoteStore
+      setPhantomKeys(keyManager.ivkHex, null);
+      
+      console.debug('[PHANTOM] Keys initialized successfully');
+    } catch (error) {
+      // Key init failure is non-fatal — user can retry by reconnecting
+      console.warn('[PHANTOM] Key initialization failed (user may have rejected signing):', error);
+      setPhantomKeys(null, null);
+    }
+  }, [address, setPhantomKeys]);
+
   useEffect(() => {
     if (status === "connected" && address && account && chain) {
       setWalletConnected(address, account, chain.id);
       // After wallet connection: initialize PHANTOM master key
-      // For now, we'll use a placeholder - the real implementation would call PhantomKeyManager
       initializePhantomKeys(account, chain.id.toString());
     } else if (status === "disconnected") {
       setWalletDisconnected();
     }
-  }, [status, address, account, chain, setWalletConnected, setWalletDisconnected]);
-}
-
-async function initializePhantomKeys(
-  account: any,
-  chainId: string,
-): Promise<void> {
-  try {
-    // This is where PhantomKeyManager.fromWalletSignature would be called
-    // For now, we just log a placeholder
-    console.log("[PHANTOM] Would initialize keys for chain:", chainId);
-    // Placeholder - in real implementation:
-    // const keyManager = await PhantomKeyManager.fromWalletSignature(account, chainId);
-    // const ivk = keyManager.deriveIncomingViewingKey();
-    // useWalletStore.getState().setPhantomKeys(ivk, null);
-  } catch (error) {
-    console.warn("[PHANTOM] Key initialization skipped:", error);
-  }
+  }, [status, address, account, chain, setWalletConnected, setWalletDisconnected, initializePhantomKeys]);
 }

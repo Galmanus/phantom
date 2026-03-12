@@ -4,8 +4,8 @@
 //! optimized for WASM execution in the browser.
 
 pub mod crypto;
-pub mod shield;
-pub mod unshield;
+// pub mod shield;  // TODO: Implement shield circuit
+// pub mod unshield;  // TODO: Implement unshield circuit
 pub mod private_swap;
 pub mod private_yield;
 pub mod compliance;

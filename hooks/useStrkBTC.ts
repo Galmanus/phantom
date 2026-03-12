@@ -10,6 +10,7 @@
 import { useState, useEffect } from 'react'
 import { usePhantom } from '@/app/providers/PhantomProvider'
 import { useAccount } from '@starknet-react/core'
+import { TOKEN_ADDRESSES, SUPPORTED_ASSETS } from '@/sdk/src/constants'
 
 export interface StrkBTCBalance {
   shielded: bigint    // private balance
@@ -33,9 +34,12 @@ export function useStrkBTC() {
       setError(null)
 
       try {
-        // strkBTC token address on Starknet Sepolia
-        // Replace with mainnet address when available
-        const STRKBTC_ADDRESS = process.env.NEXT_PUBLIC_STRKBTC_ADDRESS || '0x'
+        // Get strkBTC address from constants
+        const STRKBTC_ADDRESS = TOKEN_ADDRESSES.STRKBTC || SUPPORTED_ASSETS.STRKBTC.contractAddress
+        
+        if (!STRKBTC_ADDRESS || STRKBTC_ADDRESS === '') {
+          throw new Error('STRKBTC address not configured. Set NEXT_PUBLIC_STRKBTC_ADDRESS in .env')
+        }
 
         // Use Starkzap to get balance (handles both shielded and public)
         // Note: The actual API depends on Starkzap version

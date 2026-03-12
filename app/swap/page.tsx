@@ -42,9 +42,11 @@ export default function SwapPage() {
         })
         setTxHash(result.txHash)
       } else {
-        // Mock for now
-        await new Promise(resolve => setTimeout(resolve, 2000))
-        setTxHash('0x' + Math.random().toString(16).slice(2, 66))
+        // No swap SDK available - throw error
+        throw new Error(
+          'Swap not available: starkzap not initialized. ' +
+          'Please ensure your wallet is connected and try again.'
+        )
       }
     } catch (e: any) {
       setError(parseWalletError(e))

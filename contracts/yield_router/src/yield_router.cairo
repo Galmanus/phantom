@@ -2,18 +2,8 @@ use starknet::ContractAddress;
 use starknet::get_caller_address;
 use starknet::get_block_timestamp;
 
-// IERC20 interface for strkBTC
-#[derive(Drop, Serde)]
-struct IERC20Dispatcher {
-    contract_address: ContractAddress,
-}
-
-trait IERC20<T> {
-    fn transfer(ref self: T, to: ContractAddress, amount: u256);
-    fn transfer_from(ref self: T, from: ContractAddress, to: ContractAddress, amount: u256);
-    fn approve(ref self: T, spender: ContractAddress, amount: u256);
-    fn balance_of(self: @T, account: ContractAddress) -> u256;
-}
+// Use OpenZeppelin ERC20 interface
+use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
 
 // Strategy interface
 #[derive(Drop, Serde)]

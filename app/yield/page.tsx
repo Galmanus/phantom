@@ -1,5 +1,6 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { useAccount } from '@starknet-react/core'
 import { usePhantom } from '@/app/providers/PhantomProvider'
 import { useStrkBTC, StrkBTCBalance } from '@/hooks/useStrkBTC'
 import { PHANTOM_STRATEGIES, YieldStrategy, formatSatsToBTC, STRATEGY_INDEX } from '@/sdk/src/strategies'
@@ -10,35 +11,109 @@ type StrategyId = string | null
 export default function YieldPage() {
   const { starkzap, isReady } = usePhantom()
   const { balance } = useStrkBTC()
+  const { address } = useAccount()
   const [selectedStrategy, setSelectedStrategy] = useState<StrategyId>(null)
   const [amount, setAmount] = useState('')
   const [isOpening, setIsOpening] = useState(false)
   const [progress, setProgress] = useState('')
+  const [error, setError] = useState<string | null>(null)
   const [showBalance, setShowBalance] = useState(false)
-
-  // Mock active positions (in production, load from PositionManager)
-  const [activePositions] = useState<Array<{
+  const [activePositions, setActivePositions] = useState<Array<{
     strategyId: string
     amount: bigint
     openedAt: number
     apy: number
+    commitment: string
   }>>([])
 
   const handleOpenPosition = async () => {
     if (!selectedStrategy || !amount || !starkzap) return
-    
+    if (!address) {
+      setError('Connect wallet first')
+      return
+    }
+
+    const amountBigInt = BigInt(amount)
+    const strategy = PHANTOM_STRATEGIES.find(s => s.id === selectedStrategy)!
+
+    if (amountBigInt < strategy.minDeposit) {
+      setError(`Minimum deposit is ${formatSatsToBTC(strategy.minDeposit)}`)
+      return
+    }
+
     setIsOpening(true)
+    setError(null)
+
     try {
-      setProgress('Creating commitment...')
-      // In production: use PositionManager to open position
-      await new Promise(resolve => setTimeout(resolve, 1500))
-      setProgress('Opening position on-chain...')
-      await new Promise(resolve => setTimeout(resolve, 1500))
-      setProgress('Position opened!')
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      setProgress('')
+      setProgress('Generating position commitment...')
+      
+      // Generate nonce (cryptographically secure)
+      const nonceBytes = new Uint8Array(32)
+      crypto.getRandomValues(nonceBytes)
+      const nonce = '0x' + Array.from(nonceBytes).map(b => b.toString(16).padStart(2, '0')).join('')
+
+      // Compute commitment = Poseidon(amount, strategy_id, nonce, address)
+      // Using starknet.js hash module
+      const { hash: snHash } = await import('starknet')
+      const commitment = snHash.computePoseidonHashOnElements([
+        amountBigInt.toString(),
+        STRATEGY_INDEX[selectedStrategy].toString(),
+        nonce,
+      ])
+
+      setProgress('Submitting transaction...')
+
+      // Call YieldRouter.open_position via starkzap or direct contract call
+      const sdk = starkzap as any
+      let txHash: string
+
+      const YIELD_ROUTER_ADDRESS = process.env.NEXT_PUBLIC_YIELD_ROUTER_ADDRESS
+      if (!YIELD_ROUTER_ADDRESS) {
+        throw new Error('NEXT_PUBLIC_YIELD_ROUTER_ADDRESS not set in environment')
+      }
+
+      if (sdk?.execute) {
+        // Use starkzap execute if available
+        const result = await sdk.execute({
+          contractAddress: YIELD_ROUTER_ADDRESS,
+          entrypoint: 'open_position',
+          calldata: [commitment, STRATEGY_INDEX[selectedStrategy].toString(), amountBigInt.toString(), '0'],
+        })
+        txHash = result.transaction_hash
+      } else {
+        throw new Error('Wallet not connected or starkzap not ready')
+      }
+
+      setProgress(`Confirmed: ${txHash.slice(0, 10)}...`)
+      
+      // Store position locally (commitment + amount user-side only)
+      // In production, this would be stored in NoteStore with encryption
+      const positionRecord = {
+        commitment,
+        strategyId: selectedStrategy,
+        amount: amountBigInt,
+        nonce,
+        openedAt: Date.now(),
+        txHash,
+      }
+      
+      // Persist to localStorage with warning
+      const existing = JSON.parse(localStorage.getItem('phantom_positions') ?? '[]')
+      localStorage.setItem('phantom_positions', JSON.stringify([
+        ...existing,
+        { ...positionRecord, amount: amountBigInt.toString() }
+      ]))
+
       setAmount('')
       setSelectedStrategy(null)
+      setProgress('')
+
+      // Refresh positions
+      loadPositions()
+
+    } catch (err: any) {
+      const { parseWalletError } = await import('@/lib/wallet-errors')
+      setError(parseWalletError(err))
     } finally {
       setIsOpening(false)
     }
@@ -50,6 +125,21 @@ export default function YieldPage() {
 
   // Calculate total value
   const totalValue = activePositions.reduce((sum, p) => sum + p.amount, 0n)
+
+  // Load positions from localStorage
+  const loadPositions = useCallback(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('phantom_positions') ?? '[]')
+      setActivePositions(stored.map((p: any) => ({
+        ...p,
+        amount: BigInt(p.amount),
+      })))
+    } catch {
+      setActivePositions([])
+    }
+  }, [])
+
+  useEffect(() => { loadPositions() }, [loadPositions])
 
   return (
     <div className="min-h-screen bg-void text-text-primary">

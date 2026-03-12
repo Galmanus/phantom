@@ -12,6 +12,7 @@ export enum AssetId {
   SOLVBTC = 3,
   STRK = 4,
   USDC = 5,
+  STRKBTC = 6, // Privacy-enabled BTC (STRK20)
 }
 
 export interface AssetInfo {
@@ -20,6 +21,7 @@ export interface AssetInfo {
   symbol: string;
   decimals: number;
   contractAddress: string;
+  isPrivacy?: boolean; // STRK20 is a privacy token
 }
 
 // Shielded note - represents a private position in the shield pool

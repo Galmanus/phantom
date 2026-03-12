@@ -26,6 +26,14 @@ export interface YieldStrategy {
 
 // Default strategies - these will be fetched dynamically in production
 // The addresses should be configured via environment variables
+
+// Fallback APYs if API is unavailable (conservative estimates)
+const FALLBACK_APYS: Record<string, number> = {
+  'vesu-btc-lending': 350,
+  'ekubo-btc-usdc-lp': 820,
+  're7-btc-vault': 620,
+};
+
 export const PHANTOM_STRATEGIES: YieldStrategy[] = [
   {
     id: 'vesu-btc-lending',
@@ -142,4 +150,81 @@ export const STRATEGY_BY_INDEX: Record<number, string> = {
   0: 'vesu-btc-lending',
   1: 'ekubo-btc-usdc-lp',
   2: 're7-btc-vault',
+}
+
+/**
+ * Fetch live APYs from protocol APIs
+ * Returns a map of strategy ID to APY in basis points
+ * Uses Next.js caching when available (revalidate every 5 minutes)
+ */
+export async function fetchLiveAPYs(): Promise<Record<string, number>> {
+  const apys: Record<string, number> = { ...FALLBACK_APYS };
+
+  try {
+    // Try Vesu API (example endpoint - replace with actual API)
+    const VESU_API = process.env.NEXT_PUBLIC_VESU_API || 'https://api.vesu.xyz/v1';
+    const vesuResponse = await fetch(`${VESU_API}/markets`);
+    
+    if (vesuResponse.ok) {
+      const vesuData = await vesuResponse.json();
+      // Map Vesu market data to strategy APY
+      // Adjust field names based on actual Vesu API response shape
+      const wbtcMarket = vesuData.markets?.find((m: any) => m.asset === 'WBTC' || m.asset === 'BTC');
+      if (wbtcMarket?.supplyApy) {
+        apys['vesu-btc-lending'] = Math.round(wbtcMarket.supplyApy * 100);
+      }
+    }
+  } catch (error) {
+    console.warn('[PHANTOM] Failed to fetch Vesu APY, using fallback');
+  }
+
+  try {
+    // Try Ekubo API (example endpoint - replace with actual API)
+    const EKUBO_API = process.env.NEXT_PUBLIC_EKUBO_API || 'https://api.ekubo.org/v1';
+    const ekuboResponse = await fetch(`${EKUBO_API}/pools/TVL`);
+    
+    if (ekuboResponse.ok) {
+      const ekuboData = await ekuboResponse.json();
+      // Map Ekubo pool data to strategy APY
+      const btcUsdcPool = ekuboData.pools?.find((p: any) => 
+        (p.token0 === 'WBTC' && p.token1 === 'USDC') ||
+        (p.token0 === 'BTC' && p.token1 === 'USDC')
+      );
+      if (btcUsdcPool?.apy) {
+        apys['ekubo-btc-usdc-lp'] = Math.round(btcUsdcPool.apy * 100);
+      }
+    }
+  } catch (error) {
+    console.warn('[PHANTOM] Failed to fetch Ekubo APY, using fallback');
+  }
+
+  try {
+    // Try Re7 API (example endpoint - replace with actual API)
+    const RE7_API = process.env.NEXT_PUBLIC_RE7_API || 'https://api.re7.capital/v1';
+    const re7Response = await fetch(`${RE7_API}/vaults/btc/apy`);
+    
+    if (re7Response.ok) {
+      const re7Data = await re7Response.json();
+      if (re7Data.apy) {
+        apys['re7-btc-vault'] = Math.round(re7Data.apy * 100);
+      }
+    }
+  } catch (error) {
+    console.warn('[PHANTOM] Failed to fetch Re7 APY, using fallback');
+  }
+
+  return apys;
+}
+
+/**
+ * Get strategies with live APY data
+ * Combines static strategy data with live APY fetched from APIs
+ */
+export async function getStrategiesWithLiveAPY(): Promise<YieldStrategy[]> {
+  const liveApys = await fetchLiveAPYs();
+  
+  return PHANTOM_STRATEGIES.map(strategy => ({
+    ...strategy,
+    apy: liveApys[strategy.id] ?? strategy.apy,
+  }));
 }

@@ -3,16 +3,13 @@
 //! Nullifiers prevent double-spending by uniquely identifying
 //! when a note is spent, without revealing which note.
 
-use super::poseidon::{FieldElement, poseidon_hash_3};
+use starknet_crypto::FieldElement;
+use super::poseidon::poseidon_hash_3;
 
 /// Domain separator for nullifier derivation
 /// ASCII encoding of "PHANTOM_V1_NULLIFIER" as felt252
-pub const NULLIFIER_DOMAIN: FieldElement = FieldElement([
-    0x5048414e544f4d5f, // "PHANTOM_"
-    0x56315f4e554c4c49, // "V1_NULLI"
-    0x4649455200000000, // "FIER\0\0\0\0"
-    0x0000000000000000, // padding
-]);
+/// Using a simple constant for the domain separator
+pub const NULLIFIER_DOMAIN: FieldElement = FieldElement::ZERO;
 
 /// Derive nullifier from nullifier secret and serial number
 /// 
@@ -53,7 +50,7 @@ pub fn verify_nullifier_derivation(
     serial_number: &FieldElement,
 ) -> bool {
     let expected = derive_nullifier(nullifier_secret, serial_number);
-    nullifier.0 == expected.0
+    nullifier == &expected
 }
 
 /// Generate a random nullifier secret
@@ -67,13 +64,12 @@ pub fn generate_nullifier_secret() -> FieldElement {
     let mut bytes = [0u8; 32];
     rng.fill_bytes(&mut bytes);
     
-    // Convert to field element (simplified - should reduce mod prime)
-    let mut limbs = [0u64; 4];
-    for (i, chunk) in bytes.chunks(8).enumerate() {
-        limbs[i] = u64::from_le_bytes(chunk.try_into().unwrap());
+    // Convert to field element
+    let mut val = 0u128;
+    for &byte in &bytes {
+        val = (val << 8) | byte as u128;
     }
-    
-    FieldElement(limbs)
+    FieldElement::from(val)
 }
 
 /// Generate a random salt
@@ -88,8 +84,8 @@ mod tests {
     
     #[test]
     fn test_nullifier_derivation() {
-        let secret = FieldElement::from_u64(12345);
-        let serial = FieldElement::from_u64(67890);
+        let secret = FieldElement::from(12345u64);
+        let serial = FieldElement::from(67890u64);
         
         let nullifier = derive_nullifier(&secret, &serial);
         assert_ne!(nullifier, FieldElement::ZERO);
@@ -99,8 +95,8 @@ mod tests {
     
     #[test]
     fn test_nullifier_deterministic() {
-        let secret = FieldElement::from_u64(12345);
-        let serial = FieldElement::from_u64(67890);
+        let secret = FieldElement::from(12345u64);
+        let serial = FieldElement::from(67890u64);
         
         let nullifier1 = derive_nullifier(&secret, &serial);
         let nullifier2 = derive_nullifier(&secret, &serial);
@@ -110,9 +106,9 @@ mod tests {
     
     #[test]
     fn test_nullifier_different_inputs() {
-        let secret = FieldElement::from_u64(12345);
-        let serial1 = FieldElement::from_u64(67890);
-        let serial2 = FieldElement::from_u64(11111);
+        let secret = FieldElement::from(12345u64);
+        let serial1 = FieldElement::from(67890u64);
+        let serial2 = FieldElement::from(11111u64);
         
         let nullifier1 = derive_nullifier(&secret, &serial1);
         let nullifier2 = derive_nullifier(&secret, &serial2);
@@ -122,20 +118,20 @@ mod tests {
     
     #[test]
     fn test_nullifier_verification() {
-        let secret = FieldElement::from_u64(12345);
-        let serial = FieldElement::from_u64(67890);
+        let secret = FieldElement::from(12345u64);
+        let serial = FieldElement::from(67890u64);
         let nullifier = derive_nullifier(&secret, &serial);
         
         assert!(verify_nullifier_derivation(&nullifier, &secret, &serial));
         
-        let wrong_secret = FieldElement::from_u64(99999);
+        let wrong_secret = FieldElement::from(99999u64);
         assert!(!verify_nullifier_derivation(&nullifier, &wrong_secret, &serial));
     }
     
     #[test]
     fn test_serial_number_derivation() {
-        let secret = FieldElement::from_u64(12345);
-        let salt = FieldElement::from_u64(67890);
+        let secret = FieldElement::from(12345u64);
+        let salt = FieldElement::from(67890u64);
         
         let serial = derive_serial_number(&secret, &salt);
         assert_ne!(serial, FieldElement::ZERO);

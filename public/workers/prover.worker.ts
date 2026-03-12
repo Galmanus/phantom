@@ -1,13 +1,11 @@
 /**
- * Prover Web Worker - Runs ZK proof generation off the main thread
+ * PHANTOM Prover Web Worker - Real ZK Proof Generation
  * 
- * OBSTACLE 2 SOLUTION:
- * All proof generation runs in a Web Worker to avoid blocking the UI.
- * This allows the browser to remain responsive while proofs are generated.
+ * CRITICAL: This worker requires the WASM module to be built.
+ * Run: pnpm run circuits:build or bash scripts/build_wasm.sh
  * 
- * The worker communicates with the main thread via postMessage:
- * - Input: { type: 'prove_shield' | 'prove_unshield' | ..., inputs: {...} }
- * - Output: { type: 'proof_result', success: true/false, proof/error }
+ * Without WASM, proof operations will fail with explicit errors.
+ * NO FALLBACK TO MOCKS - security critical!
  */
 
 /// <reference lib="webworker" />
@@ -115,17 +113,9 @@ interface NullifierInputs {
   serialNumber: string;
 }
 
-// Global state
-let phantomProver: any = null;
+// Global state - MUST have WASM loaded
+let wasmModule: any = null;
 let isReady = false;
-let currentOperation: string | null = null;
-
-/**
- * Simple sleep utility
- */
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
 
 // Error handler for uncaught errors
 self.onerror = (event) => {
@@ -140,16 +130,6 @@ self.onerror = (event) => {
 // Handle unhandled promise rejections
 self.onunhandledrejection = (event) => {
   console.error('[ProverWorker] Unhandled rejection:', event.reason);
-  if (currentOperation) {
-    const id = currentOperation;
-    currentOperation = null;
-    self.postMessage({
-      type: 'proof_result',
-      id,
-      success: false,
-      error: event.reason?.message || String(event.reason),
-    } as WorkerResponse);
-  }
 };
 
 /**
@@ -157,6 +137,7 @@ self.onunhandledrejection = (event) => {
  */
 self.addEventListener('message', async (event: MessageEvent<WorkerMessage>) => {
   const msg = event.data;
+  const id = 'id' in msg ? (msg as any).id : 'unknown';
 
   // Handle initialization
   if (msg.type === 'init') {
@@ -166,18 +147,17 @@ self.addEventListener('message', async (event: MessageEvent<WorkerMessage>) => {
 
   // Handle cancellation
   if (msg.type === 'cancel') {
-    handleCancel(msg.id);
+    // Cancel is handled per-operation
     return;
   }
 
-  // All other operations require initialization
-  if (!isReady || !phantomProver) {
-    const id = 'id' in msg ? (msg as any).id : 'unknown';
+  // All other operations require WASM to be loaded
+  if (!isReady || !wasmModule) {
     self.postMessage({
       type: 'proof_result',
       id,
       success: false,
-      error: 'Prover not initialized',
+      error: 'WASM prover not initialized. Run "pnpm run circuits:build" or "bash scripts/build_wasm.sh" first.',
     } as WorkerResponse);
     return;
   }
@@ -213,7 +193,6 @@ self.addEventListener('message', async (event: MessageEvent<WorkerMessage>) => {
         throw new Error(`Unknown operation type: ${(msg as any).type}`);
     }
   } catch (error) {
-    const id = 'id' in msg ? (msg as any).id : 'unknown';
     self.postMessage({
       type: 'proof_result',
       id,
@@ -225,19 +204,33 @@ self.addEventListener('message', async (event: MessageEvent<WorkerMessage>) => {
 
 /**
  * Initialize the WASM prover
+ * CRITICAL: This MUST load real WASM module
  */
 async function handleInit(wasmPath?: string): Promise<void> {
   try {
-    // In a full implementation, we would dynamically import the WASM module
-    // For now, we set up the worker to be ready for when WASM is loaded
+    // Try to load the WASM module
+    // The module should be at /phantom_prover.js (built by wasm-pack)
+    const modulePath = wasmPath || '/phantom_prover.js';
     
-    // TODO: Load WASM module
-    // const wasmModule = await import(wasmPath || '/phantom_prover.js');
-    // await wasmModule.default();
-    // phantomProver = new wasmModule.PhantomProver();
-    
-    isReady = true;
-    self.postMessage({ type: 'ready' } as WorkerResponse);
+    try {
+      wasmModule = await import(modulePath);
+      await wasmModule.default();
+      isReady = true;
+      self.postMessage({ type: 'ready' } as WorkerResponse);
+    } catch (importError) {
+      // WASM not built yet - this is expected in development
+      const errorMsg = importError instanceof Error 
+        ? importError.message 
+        : String(importError);
+        
+      console.error('[ProverWorker] WASM module not found:', errorMsg);
+      self.postMessage({
+        type: 'error',
+        message: `WASM module not found at ${modulePath}. ` +
+                 `Run 'pnpm run circuits:build' or 'bash scripts/build_wasm.sh' to build it. ` +
+                 `Current error: ${errorMsg}`,
+      } as WorkerResponse);
+    }
   } catch (error) {
     console.error('[ProverWorker] Init failed:', error);
     self.postMessage({
@@ -248,322 +241,203 @@ async function handleInit(wasmPath?: string): Promise<void> {
 }
 
 /**
- * Handle proof cancellation
- */
-function handleCancel(id: string): void {
-  if (currentOperation === id) {
-    currentOperation = null;
-    // In a full implementation, we would abort the WASM operation
-    self.postMessage({
-      type: 'proof_result',
-      id,
-      success: false,
-      error: 'Proof generation cancelled',
-    } as WorkerResponse);
-  }
-}
-
-/**
- * Generate shield proof
+ * Generate shield proof - REAL WASM call required
  */
 async function handleProveShield(id: string, inputs: ShieldProofInputs): Promise<void> {
-  currentOperation = id;
+  if (!wasmModule?.prove_shield) {
+    throw new Error('WASM prover not available. Build WASM with: pnpm run circuits:build');
+  }
   
   self.postMessage({ type: 'progress', id, step: 'computing_commitment' } as WorkerResponse);
   
   try {
-    // In production, this would call the actual WASM prover:
-    // const proof = await phantomProver.prove_shield(JSON.stringify(inputs));
-    
-    // For now, simulate proof generation
-    await simulateProofGeneration(id, 'shield');
-    
-    // Return a mock proof (in production, this would be real)
-    const mockProof = generateMockProof(inputs.commitment);
+    const proof = wasmModule.prove_shield(
+      inputs.commitment,
+      inputs.assetId,
+      inputs.amount,
+      inputs.nullifierSecret,
+      inputs.salt
+    );
     
     self.postMessage({
       type: 'proof_result',
       id,
       success: true,
-      proof: mockProof,
+      proof,
     } as WorkerResponse);
   } catch (error) {
-    self.postMessage({
-      type: 'proof_result',
-      id,
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    } as WorkerResponse);
-  } finally {
-    currentOperation = null;
+    throw new Error(`Shield proof failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
 /**
- * Generate unshield proof
+ * Generate unshield proof - REAL WASM call required
  */
 async function handleProveUnshield(id: string, inputs: UnshieldProofInputs): Promise<void> {
-  currentOperation = id;
+  if (!wasmModule?.prove_unshield) {
+    throw new Error('WASM prover not available. Build WASM with: pnpm run circuits:build');
+  }
   
   self.postMessage({ type: 'progress', id, step: 'building_merkle_witness' } as WorkerResponse);
   
   try {
-    await simulateProofGeneration(id, 'unshield');
-    
-    const mockProof = generateMockProof(inputs.nullifier);
+    const proof = wasmModule.prove_unshield(JSON.stringify(inputs));
     
     self.postMessage({
       type: 'proof_result',
       id,
       success: true,
-      proof: mockProof,
+      proof,
     } as WorkerResponse);
   } catch (error) {
-    self.postMessage({
-      type: 'proof_result',
-      id,
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    } as WorkerResponse);
-  } finally {
-    currentOperation = null;
+    throw new Error(`Unshield proof failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
 /**
- * Generate private swap proof
+ * Generate private swap proof - REAL WASM call required
  */
 async function handleProvePrivateSwap(id: string, inputs: PrivateSwapProofInputs): Promise<void> {
-  currentOperation = id;
+  if (!wasmModule?.prove_private_swap) {
+    throw new Error('WASM prover not available. Build WASM with: pnpm run circuits:build');
+  }
   
   self.postMessage({ type: 'progress', id, step: 'computing_exchange_rate' } as WorkerResponse);
   
   try {
-    await simulateProofGeneration(id, 'private_swap');
-    
-    const mockProof = generateMockProof(inputs.nullifierIn + inputs.commitmentOut);
+    const proof = wasmModule.prove_private_swap(JSON.stringify(inputs));
     
     self.postMessage({
       type: 'proof_result',
       id,
       success: true,
-      proof: mockProof,
+      proof,
     } as WorkerResponse);
   } catch (error) {
-    self.postMessage({
-      type: 'proof_result',
-      id,
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    } as WorkerResponse);
-  } finally {
-    currentOperation = null;
+    throw new Error(`Private swap proof failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
 /**
- * Generate yield deposit proof
+ * Generate yield deposit proof - REAL WASM call required
  */
 async function handleProveYieldDeposit(id: string, inputs: YieldDepositProofInputs): Promise<void> {
-  currentOperation = id;
+  if (!wasmModule?.prove_yield_deposit) {
+    throw new Error('WASM prover not available. Build WASM with: pnpm run circuits:build');
+  }
   
   self.postMessage({ type: 'progress', id, step: 'computing_yield_commitment' } as WorkerResponse);
   
   try {
-    await simulateProofGeneration(id, 'yield_deposit');
-    
-    const mockProof = generateMockProof(inputs.depositCommitment);
+    const proof = wasmModule.prove_yield_deposit(JSON.stringify(inputs));
     
     self.postMessage({
       type: 'proof_result',
       id,
       success: true,
-      proof: mockProof,
+      proof,
     } as WorkerResponse);
   } catch (error) {
-    self.postMessage({
-      type: 'proof_result',
-      id,
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    } as WorkerResponse);
-  } finally {
-    currentOperation = null;
+    throw new Error(`Yield deposit proof failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
 /**
- * Generate yield claim proof
+ * Generate yield claim proof - REAL WASM call required
  */
 async function handleProveYieldClaim(id: string, inputs: YieldClaimProofInputs): Promise<void> {
-  currentOperation = id;
+  if (!wasmModule?.prove_yield_claim) {
+    throw new Error('WASM prover not available. Build WASM with: pnpm run circuits:build');
+  }
   
   self.postMessage({ type: 'progress', id, step: 'computing_claim_proof' } as WorkerResponse);
   
   try {
-    await simulateProofGeneration(id, 'yield_claim');
-    
-    const mockProof = generateMockProof(inputs.positionNullifier);
+    const proof = wasmModule.prove_yield_claim(JSON.stringify(inputs));
     
     self.postMessage({
       type: 'proof_result',
       id,
       success: true,
-      proof: mockProof,
+      proof,
     } as WorkerResponse);
   } catch (error) {
-    self.postMessage({
-      type: 'proof_result',
-      id,
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    } as WorkerResponse);
-  } finally {
-    currentOperation = null;
+    throw new Error(`Yield claim proof failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
 /**
- * Generate compliance proof
+ * Generate compliance proof - REAL WASM call required
  */
 async function handleProveCompliance(id: string, inputs: ComplianceProofInputs): Promise<void> {
-  currentOperation = id;
+  if (!wasmModule?.prove_compliance) {
+    throw new Error('WASM prover not available. Build WASM with: pnpm run circuits:build');
+  }
   
   self.postMessage({ type: 'progress', id, step: 'building_compliance_proof' } as WorkerResponse);
   
   try {
-    await simulateProofGeneration(id, 'compliance');
-    
-    const mockProof = generateMockProof(inputs.kycCommitment + inputs.sanctionsMerkleRoot);
+    const proof = wasmModule.prove_compliance(JSON.stringify(inputs));
     
     self.postMessage({
       type: 'proof_result',
       id,
       success: true,
-      proof: mockProof,
+      proof,
     } as WorkerResponse);
   } catch (error) {
-    self.postMessage({
-      type: 'proof_result',
-      id,
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    } as WorkerResponse);
-  } finally {
-    currentOperation = null;
+    throw new Error(`Compliance proof failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
 /**
- * Derive commitment (helper function)
+ * Derive commitment using REAL Poseidon from WASM
  */
 async function handleDeriveCommitment(id: string, inputs: CommitmentInputs): Promise<void> {
+  if (!wasmModule?.derive_commitment_js) {
+    throw new Error('WASM prover not available. Build WASM with: pnpm run circuits:build');
+  }
+  
   try {
-    // In production, this would use Poseidon:
-    // const commitment = await phantomProver.derive_commitment_js(
-    //   inputs.amount,
-    //   inputs.assetId,
-    //   inputs.nullifierSecret,
-    //   inputs.salt
-    // );
-    
-    // Mock commitment derivation
-    const mockCommitment = `0x${btoa(
-      inputs.amount + inputs.assetId + inputs.nullifierSecret + inputs.salt
-    ).slice(0, 64).padEnd(64, '0')}`;
+    const result = wasmModule.derive_commitment_js(
+      inputs.amount,
+      inputs.assetId,
+      inputs.nullifierSecret,
+      inputs.salt
+    );
     
     self.postMessage({
       type: 'derived_result',
       id,
       success: true,
-      result: mockCommitment,
+      result,
     } as WorkerResponse);
   } catch (error) {
-    self.postMessage({
-      type: 'derived_result',
-      id,
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    } as WorkerResponse);
+    throw new Error(`Commitment derivation failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
 /**
- * Derive nullifier (helper function)
+ * Derive nullifier using REAL Poseidon from WASM
  */
 async function handleDeriveNullifier(id: string, inputs: NullifierInputs): Promise<void> {
+  if (!wasmModule?.derive_nullifier_js) {
+    throw new Error('WASM prover not available. Build WASM with: pnpm run circuits:build');
+  }
+  
   try {
-    // In production, this would use Poseidon:
-    // const nullifier = await phantomProver.derive_nullifier_js(
-    //   inputs.nullifierSecret,
-    //   inputs.serialNumber
-    // );
-    
-    // Mock nullifier derivation
-    const mockNullifier = `0x${btoa(
-      inputs.nullifierSecret + inputs.serialNumber + 'PHANTOM_V1_NULLIFIER'
-    ).slice(0, 64).padEnd(64, '0')}`;
+    const result = wasmModule.derive_nullifier_js(
+      inputs.nullifierSecret,
+      inputs.serialNumber
+    );
     
     self.postMessage({
       type: 'derived_result',
       id,
       success: true,
-      result: mockNullifier,
+      result,
     } as WorkerResponse);
   } catch (error) {
-    self.postMessage({
-      type: 'derived_result',
-      id,
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    } as WorkerResponse);
+    throw new Error(`Nullifier derivation failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
-
-/**
- * Simulate proof generation with progress updates
- * 
- * In production, this would be actual WASM proving time.
- * Expected times (from StarkWare benchmarks):
- * - Shield: ~100ms
- * - Unshield: ~150ms
- * - Private Swap: ~250ms
- * - Yield: ~200ms
- * - Compliance: ~300ms
- */
-async function simulateProofGeneration(id: string, proofType: string): Promise<void> {
-  const delays: Record<string, number> = {
-    shield: 100,
-    unshield: 150,
-    private_swap: 250,
-    yield_deposit: 200,
-    yield_claim: 200,
-    compliance: 300,
-  };
-  
-  const baseDelay = delays[proofType] || 100;
-  
-  // Simulate progressive steps
-  const steps = ['initializing', 'witness_generation', 'constraint_evaluation', 'proof_compression'];
-  
-  for (const step of steps) {
-    self.postMessage({ type: 'progress', id, step } as WorkerResponse);
-    await sleep(baseDelay / steps.length);
-  }
-}
-
-/**
- * Generate a mock proof for development
- * In production, this would be replaced with actual WASM proof generation
- */
-function generateMockProof(seed: string): string {
-  // Create a deterministic mock proof based on input
-  const hash = btoa(seed);
-  // Pad to create a mock proof
-  const proof = hash.repeat(20).slice(0, 1024);
-  
-  return '0x' + btoa(proof).replace(/=/g, '').slice(0, 1024);
-}
-
-// Export types for TypeScript
-export type { WorkerMessage, WorkerResponse };

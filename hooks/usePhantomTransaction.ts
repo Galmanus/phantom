@@ -2,11 +2,12 @@
 "use client";
 
 import { useAccount } from "@starknet-react/core";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useWalletStore } from "@/store/walletStore";
 import { parseUnits } from "viem";
 import { PHANTOM_CONTRACTS } from "@/lib/constants";
 import { Call, Account } from "starknet";
+import { ProverWorkerClient } from "@/sdk/src/proof/ProverWorkerClient";
 
 // Types for transaction states
 export type TransactionState = "idle" | "approving" | "generating" | "submitting" | "success" | "error";
@@ -53,12 +54,17 @@ export function useShieldTransaction() {
         const decimals = params.asset === "wBTC" ? 8 : 18;
         const amountWei = parseUnits(params.amount as `${number}`, decimals);
 
-        // Phase 2: Generate Proof (simulated)
+        // Phase 2: Generate Proof using real prover worker
         setState("generating");
         setTransactionState("generating");
 
-        // In production: await proverWorker.prove({ circuit: 'shield', input })
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        // PHANTOM: Real implementation requires prover worker
+        // Shield proof requires: commitment, nullifier_secret, salt
+        // Run `pnpm run circuits:build` to build the prover WASM module
+        throw new Error(
+          'Shield proof generation requires WASM prover. ' +
+          'Run `pnpm run circuits:build` to build the prover WASM module.'
+        );
 
         // Phase 3: Submit Transaction
         setState("submitting");
@@ -138,7 +144,11 @@ export function useUnshieldTransaction() {
 
         // Generate unshield proof
         // In production: await proverWorker.prove({ circuit: 'unshield', input })
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        // PHANTOM: Real implementation requires prover worker
+        throw new Error(
+          'Unshield proof generation requires WASM prover. ' +
+          'Run `pnpm run circuits:build` to build the prover WASM module.'
+        );
 
         // Phase 2: Submit Transaction
         setState("submitting");
@@ -212,7 +222,11 @@ export function usePrivateSwap() {
         setTransactionState("generating");
 
         // Generate swap proof
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        // PHANTOM: Real implementation requires prover worker
+        throw new Error(
+          'Swap proof generation requires WASM prover. ' +
+          'Run `pnpm run circuits:build` to build the prover WASM module.'
+        );
 
         setState("submitting");
         setTransactionState("submitting");

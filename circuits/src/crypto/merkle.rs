@@ -3,7 +3,8 @@
 //! Implements a binary Merkle tree with height 20 (2^20 leaves).
 //! Compatible with the Cairo PhantomMerkle contract.
 
-use super::poseidon::{FieldElement, poseidon_hash};
+use starknet_crypto::FieldElement;
+use super::poseidon::poseidon_hash;
 
 /// Tree height (20 levels = 2^20 = 1,048,576 leaves)
 pub const TREE_HEIGHT: usize = 20;
@@ -280,22 +281,22 @@ mod tests {
     
     #[test]
     fn test_merkle_root_single_leaf() {
-        let leaf = FieldElement::from_u64(42);
+        let leaf = FieldElement::from(42u64);
         let root = compute_root(&[leaf]);
         assert_ne!(root, FieldElement::ZERO);
     }
     
     #[test]
     fn test_merkle_root_two_leaves() {
-        let left = FieldElement::from_u64(1);
-        let right = FieldElement::from_u64(2);
+        let left = FieldElement::from(1u64);
+        let right = FieldElement::from(2u64);
         let root = compute_root(&[left, right]);
         assert_ne!(root, FieldElement::ZERO);
     }
     
     #[test]
     fn test_merkle_proof_verification() {
-        let leaves: Vec<FieldElement> = (0..8).map(FieldElement::from_u64).collect();
+        let leaves: Vec<FieldElement> = (0usize..8).map(|i| FieldElement::from(i as u64)).collect();
         let root = compute_root(&leaves);
         
         for (i, &leaf) in leaves.iter().enumerate() {
@@ -309,7 +310,7 @@ mod tests {
         let mut tree = MerkleTree::new();
 
         for i in 0u64..10 {
-            let leaf = FieldElement::from_u64(i);
+            let leaf = FieldElement::from(i);
             let (root, idx) = tree.append(leaf);
             assert_eq!(idx, i as usize);
 
@@ -320,11 +321,11 @@ mod tests {
     
     #[test]
     fn test_invalid_proof_fails() {
-        let leaves: Vec<FieldElement> = (0..4).map(FieldElement::from_u64).collect();
+        let leaves: Vec<FieldElement> = (0usize..4).map(|i| FieldElement::from(i as u64)).collect();
         let root = compute_root(&leaves);
         
         let path = generate_path(&leaves, 0);
-        let wrong_leaf = FieldElement::from_u64(999);
+        let wrong_leaf = FieldElement::from(999u64);
         
         assert!(!verify_path(wrong_leaf, &path, root));
     }

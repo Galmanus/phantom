@@ -22,7 +22,12 @@ export const TOKEN_ADDRESSES: Record<string, string> = {
   SOLVBTC: process.env.NEXT_PUBLIC_SOLVBTC_ADDRESS || '',
   STRK: process.env.NEXT_PUBLIC_STRK_ADDRESS || '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d',
   USDC: process.env.NEXT_PUBLIC_USDC_ADDRESS || '',
+  // STRK20 - the privacy-enabled BTC token
+  STRKBTC: process.env.NEXT_PUBLIC_STRKBTC_ADDRESS || '',
 };
+
+// STRK20 Pool address (for yield routing)
+export const STRK20_POOL_ADDRESS = process.env.NEXT_PUBLIC_STRK20_POOL_ADDRESS || '';
 
 // Supported assets configuration
 export const SUPPORTED_ASSETS: Record<string, AssetInfo> = {
@@ -67,6 +72,15 @@ export const SUPPORTED_ASSETS: Record<string, AssetInfo> = {
     symbol: 'USDC',
     decimals: 6,
     contractAddress: TOKEN_ADDRESSES.USDC,
+  },
+  // STRK20 - Privacy-enabled BTC
+  STRKBTC: {
+    id: 6,
+    name: 'STRK20 Bitcoin',
+    symbol: 'strkBTC',
+    decimals: 8,
+    contractAddress: TOKEN_ADDRESSES.STRKBTC,
+    isPrivacy: true,
   },
 };
 

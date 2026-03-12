@@ -1,6 +1,6 @@
 //! Intent Circuit - Dark pool intent validity and matching proofs
 
-use crate::crypto::poseidon::FieldElement;
+use starknet_crypto::FieldElement;
 
 /// Intent validity proof
 #[derive(Debug, Clone)]
@@ -59,11 +59,11 @@ pub struct IntentMatchingCircuit {
 impl IntentMatchingCircuit {
     pub fn prove(&self) -> Result<MatchingProof, String> {
         // Verify intents are complementary
-        if self.intent_a_asset_in.0 != self.intent_b_asset_out.0 {
+        if self.intent_a_asset_in != self.intent_b_asset_out {
             return Err("Assets don't match".to_string());
         }
         
-        if self.intent_a_asset_out.0 != self.intent_b_asset_in.0 {
+        if self.intent_a_asset_out != self.intent_b_asset_in {
             return Err("Assets don't match".to_string());
         }
         
