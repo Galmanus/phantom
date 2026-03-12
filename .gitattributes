@@ -1,0 +1,16 @@
+# GitHub Language Statistics Configuration
+# Explicitly define language percentages
+
+# Exclude node_modules and other dependencies from language stats
+node_modules/** linguist-vendored
+sdk/node_modules/** linguist-vendored
+
+# Documentation files don't count toward language stats
+*.md linguist-documentation=false
+
+# Force specific file types to be counted correctly
+*.rs linguist-language=Rust
+*.ts linguist-language=TypeScript
+*.tsx linguist-language=TypeScript
+*.cairo linguist-language=Cairo
+*.json linguist-language=JSON
