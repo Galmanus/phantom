@@ -1,0 +1,10 @@
+[package]
+name = "yield_router"
+version = "1.0.0"
+edition = "2024_07"
+
+[dependencies]
+starknet = { git = "https://github.com/starknet-io/starknet-cairo" }
+openzeppelin = { git = "https://github.com/OpenZeppelin/cairo-contracts" }
+
+[lib]

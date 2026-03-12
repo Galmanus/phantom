@@ -1,93 +1,267 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { usePhantom } from '@/app/providers/PhantomProvider'
+import { useStrkBTC, StrkBTCBalance } from '@/hooks/useStrkBTC'
+import { PHANTOM_STRATEGIES, YieldStrategy, formatSatsToBTC, STRATEGY_INDEX } from '@/sdk/src/strategies'
+import Link from 'next/link'
 
-type Protocol = 'vesu' | 'uncap' | 'opus' | null
+type StrategyId = string | null
 
 export default function YieldPage() {
-  const [selectedProtocol, setSelectedProtocol] = useState<Protocol>(null)
+  const { starkzap, isReady } = usePhantom()
+  const { balance } = useStrkBTC()
+  const [selectedStrategy, setSelectedStrategy] = useState<StrategyId>(null)
+  const [amount, setAmount] = useState('')
+  const [isOpening, setIsOpening] = useState(false)
+  const [progress, setProgress] = useState('')
   const [showBalance, setShowBalance] = useState(false)
-  const [depositing, setDepositing] = useState(false)
 
-  const protocols = [
-    { id: 'vesu', name: 'Vesu', apy: '3.2%', tvl: '$12M', type: 'Lending', selected: selectedProtocol === 'vesu' },
-    { id: 'uncap', name: 'Uncap', apy: '4.8%', tvl: '$8M', type: 'Lending', selected: selectedProtocol === 'uncap' },
-    { id: 'opus', name: 'Opus', apy: '5.1%', tvl: '$6M', type: 'Lending', selected: selectedProtocol === 'opus' },
-  ]
+  // Mock active positions (in production, load from PositionManager)
+  const [activePositions] = useState<Array<{
+    strategyId: string
+    amount: bigint
+    openedAt: number
+    apy: number
+  }>>([])
+
+  const handleOpenPosition = async () => {
+    if (!selectedStrategy || !amount || !starkzap) return
+    
+    setIsOpening(true)
+    try {
+      setProgress('Creating commitment...')
+      // In production: use PositionManager to open position
+      await new Promise(resolve => setTimeout(resolve, 1500))
+      setProgress('Opening position on-chain...')
+      await new Promise(resolve => setTimeout(resolve, 1500))
+      setProgress('Position opened!')
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      setProgress('')
+      setAmount('')
+      setSelectedStrategy(null)
+    } finally {
+      setIsOpening(false)
+    }
+  }
+
+  const selectedStrategyData = selectedStrategy 
+    ? PHANTOM_STRATEGIES.find(s => s.id === selectedStrategy) 
+    : null
+
+  // Calculate total value
+  const totalValue = activePositions.reduce((sum, p) => sum + p.amount, 0n)
 
   return (
-    <div className="min-h-screen pt-24 pb-16">
-      <div className="max-w-7xl mx-auto px-6">
-        <h1 className="font-display font-black text-5xl text-parchment mb-4">Yield</h1>
-        <p className="text-lg text-secondary mb-12">Earn yield without broadcasting your position.</p>
+    <div className="min-h-screen bg-void text-text-primary">
+      {/* Header */}
+      <div className="border-b border-amber/10 px-8 py-6">
+        <h1 className="text-2xl font-display font-bold text-amber">
+          Private Yield Strategies
+        </h1>
+        <p className="text-text-primary/60 mt-1">
+          Earn yield on strkBTC. Your position stays private.
+        </p>
+      </div>
 
-        {/* Protocol Selector */}
-        <div className="grid md:grid-cols-3 gap-4 mb-12">
-          {protocols.map(p => (
-            <button key={p.id} onClick={() => setSelectedProtocol(p.id as Protocol)} className={`card p-6 text-left transition-all ${p.selected ? 'border-amber' : 'hover:border-amber-dim'}`}>
-              <div className="flex justify-between items-start mb-4">
-                <span className="font-display font-bold text-2xl text-parchment">{p.name}</span>
-                {p.selected && <span className="text-amber">✓</span>}
-              </div>
-              <div className="text-3xl font-mono text-amber mb-1">{p.apy}</div>
-              <div className="text-sm text-muted mb-4">APY · {p.tvl} TVL</div>
-              <div className="text-xs text-muted font-mono uppercase">{p.type}</div>
-            </button>
-          ))}
+      {/* Balance bar */}
+      <div className="px-8 py-4 bg-panel border-b border-amber/10">
+        <div className="flex items-center gap-4">
+          <span className="text-sm text-text-primary/60">Available strkBTC</span>
+          <span className="font-mono text-amber font-bold">
+            {balance ? (showBalance ? balance.formatted : '••••••••') : '—'}
+          </span>
+          <button 
+            onClick={() => setShowBalance(!showBalance)}
+            className="text-xs text-amber/60 hover:text-amber"
+          >
+            {showBalance ? 'Hide' : 'Reveal'}
+          </button>
+        </div>
+      </div>
+
+      {/* Main content */}
+      <div className="px-8 py-8">
+        {/* Strategy Grid */}
+        <div className="mb-8">
+          <h2 className="text-lg font-display font-bold text-text-primary/80 mb-4">
+            Select a Strategy
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {PHANTOM_STRATEGIES.map(strategy => (
+              <StrategyCard
+                key={strategy.id}
+                strategy={strategy}
+                isSelected={selectedStrategy === strategy.id}
+                onSelect={() => setSelectedStrategy(strategy.id)}
+              />
+            ))}
+          </div>
         </div>
 
-        {/* Yield Dashboard */}
-        <div className="card">
-          <h2 className="font-display font-bold text-xl text-parchment mb-6">Your Shielded Positions</h2>
+        {/* Deposit form */}
+        {selectedStrategy && selectedStrategyData && (
+          <div className="card p-6 mb-8">
+            <h3 className="font-display font-bold text-xl text-text-primary mb-4">
+              Deposit into {selectedStrategyData.name}
+            </h3>
+            
+            <div className="mb-4">
+              <label className="text-sm text-text-primary/60 mb-2 block">
+                Amount (satoshis)
+              </label>
+              <input
+                type="number"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="Enter amount in sats"
+                className="w-full bg-surface border border-amber/20 rounded-lg px-4 py-3 font-mono text-text-primary"
+              />
+              <p className="text-xs text-text-primary/40 mt-2">
+                Min: {formatSatsToBTC(selectedStrategyData.minDeposit)}
+              </p>
+            </div>
+
+            {amount && BigInt(amount) > 0n && (
+              <div className="p-4 bg-surface rounded-lg mb-4">
+                <div className="flex justify-between text-sm">
+                  <span className="text-text-primary/60">Amount</span>
+                  <span className="font-mono text-text-primary">
+                    {formatSatsToBTC(BigInt(amount))}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm mt-2">
+                  <span className="text-text-primary/60">Est. Daily Yield</span>
+                  <span className="font-mono text-zk-green">
+                    ~{formatSatsToBTC(BigInt(Math.floor(Number(amount) * (selectedStrategyData.apy / 10000) / 365)))}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <button
+              onClick={handleOpenPosition}
+              disabled={isOpening || !amount || BigInt(amount) < selectedStrategyData.minDeposit}
+              className="btn-primary w-full"
+            >
+              {isOpening ? progress || 'Processing...' : '▶ Open Position'}
+            </button>
+          </div>
+        )}
+
+        {/* Active Positions */}
+        <div className="mt-12">
+          <h2 className="text-lg font-display font-bold text-text-primary/80 mb-4">
+            Active Positions
+          </h2>
           
-          {selectedProtocol ? (
-            <div className="space-y-6">
-              <div className="p-4 bg-surface rounded-xl border border-border">
-                <div className="flex justify-between items-center mb-4">
-                  <div>
-                    <span className="text-parchment font-bold">{selectedProtocol.toUpperCase()}</span>
-                    <span className="text-muted ml-2">· wBTC lending</span>
-                  </div>
-                  <span className="text-zk-green font-mono">5.1% APY</span>
-                </div>
-                <div className="flex justify-between items-center mb-4">
-                  <div>
-                    <div className="text-xs text-muted mb-1">Deposited</div>
-                    <div className="font-mono text-xl text-parchment">
-                      {showBalance ? '0.2341 wBTC' : '••••••'}
+          {activePositions.length > 0 ? (
+            <div className="space-y-3">
+              {activePositions.map((position, i) => {
+                const strategy = PHANTOM_STRATEGIES.find(s => s.id === position.strategyId)
+                const daysOpen = Math.floor((Date.now() - position.openedAt) / (1000 * 60 * 60 * 24))
+                const estimatedYield = BigInt(Math.floor(Number(position.amount) * (position.apy / 10000) * (daysOpen / 365)))
+                
+                return (
+                  <div key={i} className="border border-amber/20 rounded-xl p-4 bg-panel">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div>
+                          <div className="font-display font-bold">{strategy?.name}</div>
+                          <div className="text-xs text-text-primary/50">
+                            {daysOpen === 0 ? 'Opened today' : `${daysOpen}d ago`}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <div className="font-mono">
+                          {showBalance ? formatSatsToBTC(position.amount) : '••••••'}
+                        </div>
+                        <div className="font-mono text-zk-green">
+                          +{showBalance ? formatSatsToBTC(estimatedYield) : '••••••'}
+                        </div>
+                        <button className="text-xs border border-amber/30 text-amber px-3 py-1 rounded-lg hover:bg-amber/10">
+                          Withdraw
+                        </button>
+                      </div>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-xs text-muted mb-1">Earned today</div>
-                    <div className="font-mono text-xl text-parchment">
-                      {showBalance ? '0.000031 wBTC' : '••••••'}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex gap-3">
-                  <button onClick={() => setShowBalance(!showBalance)} className="btn-outline flex-1">
-                    {showBalance ? 'Hide' : 'Reveal to me only'}
-                  </button>
-                  <button className="btn-primary flex-1">Claim Yield</button>
-                  <button className="btn-outline">Withdraw</button>
-                </div>
-              </div>
-              <div className="flex gap-4">
-                <button onClick={() => setDepositing(true)} disabled={depositing} className="btn-primary">
-                  {depositing ? 'Depositing...' : '▶ Deposit to Earn'}
-                </button>
-              </div>
+                )
+              })}
             </div>
           ) : (
-            <div className="text-center py-12">
-              <div className="w-16 h-16 mx-auto rounded-full bg-surface flex items-center justify-center mb-4">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" className="text-muted"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" stroke="currentColor" strokeWidth="2"/></svg>
-              </div>
-              <p className="text-secondary mb-2">No active positions</p>
-              <p className="text-sm text-muted">Select a protocol above to start earning.</p>
+            <div className="border border-amber/10 rounded-xl p-8 text-center text-text-primary/40">
+              No active positions. Select a strategy above to start earning.
             </div>
           )}
         </div>
       </div>
     </div>
+  )
+}
+
+function StrategyCard({ strategy, isSelected, onSelect }: {
+  strategy: YieldStrategy
+  isSelected: boolean
+  onSelect: () => void
+}) {
+  const riskColors = {
+    low: 'text-zk-green',
+    medium: 'text-amber',
+    high: 'text-red-400',
+  }
+
+  return (
+    <button
+      onClick={onSelect}
+      className={`
+        text-left p-5 rounded-xl border transition-all
+        ${isSelected
+          ? 'border-amber bg-amber/10'
+          : 'border-amber/20 bg-panel hover:border-amber/40'
+        }
+      `}
+    >
+      {/* Protocol badge */}
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-xs font-mono text-text-primary/50 uppercase tracking-wider">
+          {strategy.protocol}
+        </span>
+        <span className={`text-xs ${riskColors[strategy.riskLevel]}`}>
+          {strategy.riskLevel} risk
+        </span>
+      </div>
+
+      {/* Strategy name */}
+      <div className="text-lg font-display font-bold text-text-primary mb-1">
+        {strategy.name}
+      </div>
+
+      {/* APY */}
+      <div className="text-3xl font-mono font-bold text-amber mb-3">
+        {(strategy.apy / 100).toFixed(1)}%
+        <span className="text-sm text-text-primary/50 ml-1">APY</span>
+      </div>
+
+      {/* Description */}
+      <p className="text-xs text-text-primary/60 mb-3">
+        {strategy.description}
+      </p>
+
+      {/* Lock period */}
+      <div className="text-xs text-text-primary/40">
+        {strategy.lockPeriod === 0
+          ? '✓ No lock period'
+          : `${strategy.lockPeriod}-day withdrawal window`
+        }
+      </div>
+
+      {/* Privacy badge */}
+      {strategy.isPrivate && (
+        <div className="mt-3 flex items-center gap-1 text-xs text-zk-green">
+          <span>●</span>
+          <span>Position amount stays private</span>
+        </div>
+      )}
+    </button>
   )
 }

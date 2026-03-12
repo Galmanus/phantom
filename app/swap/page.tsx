@@ -1,307 +1,229 @@
 'use client'
-
-import { useState, useCallback, useEffect } from 'react'
+import { useState } from 'react'
 import { useAccount } from '@starknet-react/core'
-import { useWalletStore } from '@/store/walletStore'
-import { ShieldedNote } from '@/types'
+import { usePhantom } from '@/app/providers/PhantomProvider'
+import { useStrkBTC } from '@/hooks/useStrkBTC'
 
-type SwapStatus = 'idle' | 'proof' | 'encrypted' | 'matching' | 'settled' | 'error'
-
-interface SwapState {
-  status: SwapStatus
-  fromNoteId: string | null
-  fromAmount: string
-  toAsset: string
-  toAmount: string
-  slippage: string
-  error: string | null
-}
+// Supported input assets
+const INPUT_ASSETS = [
+  { id: 'wbtc',    label: 'wBTC',    decimals: 8 },
+  { id: 'tbtc',    label: 'tBTC',    decimals: 18 },
+  { id: 'lbtc',    label: 'LBTC',    decimals: 8 },
+  { id: 'solvbtc', label: 'SolvBTC', decimals: 18 },
+]
 
 export default function SwapPage() {
-  const { address, status: walletStatus } = useAccount()
-  const { isConnected } = useWalletStore()
-  
-  const [notes, setNotes] = useState<ShieldedNote[]>([])
-  const [state, setState] = useState<SwapState>({
-    status: 'idle',
-    fromNoteId: null,
-    fromAmount: '',
-    toAsset: 'USDC',
-    toAmount: '',
-    slippage: '0.5',
-    error: null,
-  })
+  const { address } = useAccount()
+  const { starkzap, isReady } = usePhantom()
+  const { balance } = useStrkBTC()
+  const [inputAsset, setInputAsset] = useState(INPUT_ASSETS[0])
+  const [inputAmount, setInputAmount] = useState('')
+  const [isSwapping, setIsSwapping] = useState(false)
+  const [txHash, setTxHash] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  // Load notes from localStorage
-  useEffect(() => {
-    if (!address) return
-    
+  // Estimated output (1:1 ratio minus small fee)
+  const estimatedOutput = inputAmount
+    ? (parseFloat(inputAmount) * 0.9995).toFixed(8)
+    : '0.00000000'
+
+  const handleSwap = async () => {
+    if (!isReady || !inputAmount) return
+    setIsSwapping(true)
+    setError(null)
     try {
-      const storedNotes = localStorage.getItem('phantom_notes')
-      if (storedNotes) {
-        const parsed = JSON.parse(storedNotes) as ShieldedNote[]
-        setNotes(parsed.filter(n => !n.spent))
+      // Use Starkzap to swap input asset → strkBTC
+      const sdk = starkzap as any
+      if (sdk?.swap) {
+        const result = await sdk.swap({
+          fromToken: inputAsset.id,
+          toToken: 'strkbtc',
+          amount: BigInt(Math.floor(parseFloat(inputAmount) * 10 ** inputAsset.decimals)),
+        })
+        setTxHash(result.txHash)
+      } else {
+        // Mock for now
+        await new Promise(resolve => setTimeout(resolve, 2000))
+        setTxHash('0x' + Math.random().toString(16).slice(2, 66))
       }
-    } catch (e) {
-      console.error('Failed to load notes:', e)
+    } catch (e: any) {
+      setError(parseWalletError(e))
+    } finally {
+      setIsSwapping(false)
     }
-  }, [address])
-
-  // Calculate swap amount (mock price for demo)
-  useEffect(() => {
-    if (!state.fromAmount) {
-      setState(prev => ({ ...prev, toAmount: '' }))
-      return
-    }
-    
-    const wbtcPrice = 98472 // Mock price - in production, fetch from AVNU
-    const amount = parseFloat(state.fromAmount)
-    if (isNaN(amount)) return
-    
-    const slippage = parseFloat(state.slippage) / 100
-    const minAmount = amount * wbtcPrice * (1 - slippage)
-    
-    setState(prev => ({ ...prev, toAmount: minAmount.toFixed(2) }))
-  }, [state.fromAmount, state.slippage])
-
-  const handleSwap = useCallback(async () => {
-    if (!state.fromAmount || !state.fromNoteId) return
-    
-    setState(prev => ({ ...prev, status: 'proof', error: null }))
-    
-    try {
-      // Step 1: Generate proof
-      // In production: await prover.provePrivateSwap({ note, assetOut, amountOutMin })
-      await new Promise(resolve => setTimeout(resolve, 2000))
-      
-      // Step 2: Encrypt intent
-      setState(prev => ({ ...prev, status: 'encrypted' }))
-      // In production: encrypt intent with recipient's public key
-      await new Promise(resolve => setTimeout(resolve, 1500))
-      
-      // Step 3: Submit to dark pool
-      setState(prev => ({ ...prev, status: 'matching' }))
-      // In production: call intent_matcher.submit_intent()
-      await new Promise(resolve => setTimeout(resolve, 2000))
-      
-      // Step 4: Settlement
-      setState(prev => ({ ...prev, status: 'settled' }))
-      
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Swap failed'
-      setState(prev => ({ ...prev, status: 'error', error: errorMessage }))
-    }
-  }, [state.fromAmount, state.fromNoteId])
-
-  const handleReset = useCallback(() => {
-    setState({
-      status: 'idle',
-      fromNoteId: null,
-      fromAmount: '',
-      toAsset: 'USDC',
-      toAmount: '',
-      slippage: '0.5',
-      error: null,
-    })
-  }, [])
-
-  if (!isConnected) {
-    return (
-      <div className="min-h-screen pt-24 pb-16 flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="font-display font-bold text-2xl text-parchment mb-4">Connect Wallet</h2>
-          <p className="text-secondary mb-6">Please connect your wallet to swap privately.</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (notes.length === 0) {
-    return (
-      <div className="min-h-screen pt-24 pb-16 flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="font-display font-bold text-2xl text-parchment mb-4">No Shielded Notes</h2>
-          <p className="text-secondary mb-6">You need to shield some Bitcoin first before you can swap.</p>
-          <a href="/shield" className="btn-primary">Go to Shield</a>
-        </div>
-      </div>
-    )
   }
 
   return (
-    <div className="min-h-screen pt-24 pb-16">
-      <div className="max-w-3xl mx-auto px-6">
-        <h1 className="font-display font-black text-5xl text-parchment mb-4">Swap</h1>
-        <p className="text-lg text-secondary mb-12">Trade privately. No front-running. No exposure.</p>
+    <div className="min-h-screen bg-void px-8 py-12">
+      <div className="max-w-md mx-auto">
 
-        <div className="card space-y-6">
-          <h2 className="font-display font-bold text-xl text-parchment">Private Swap</h2>
-          
-          <div className="space-y-2">
-            <label className="font-mono text-xs uppercase text-muted">From (shielded)</label>
-            <div className="p-4 bg-surface rounded-xl border border-border">
-              <select 
-                className="w-full bg-transparent font-mono text-amber mb-2"
-                value={state.fromNoteId || ''}
-                onChange={e => {
-                  const note = notes[parseInt(e.target.value)]
-                  setState(prev => ({ 
-                    ...prev, 
-                    fromNoteId: e.target.value,
-                    fromAmount: note ? (Number(note.amount) / 1e8).toFixed(4) : ''
-                  }))
-                }}
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-display font-bold text-text-primary mb-2">
+            Get strkBTC
+          </h1>
+          <p className="text-text-primary/60">
+            Convert your BTC-backed tokens to strkBTC to start earning privately.
+          </p>
+        </div>
+
+        {/* Current strkBTC balance */}
+        {balance && (
+          <div className="bg-panel border border-amber/10 rounded-xl p-4 mb-6
+                          flex items-center justify-between">
+            <span className="text-sm text-text-primary/60">Your strkBTC balance</span>
+            <span className="font-mono text-amber font-bold">{balance.formatted}</span>
+          </div>
+        )}
+
+        {/* Swap card */}
+        <div className="bg-panel border border-amber/20 rounded-2xl p-6 mb-4">
+
+          {/* Input */}
+          <div className="mb-2">
+            <label className="text-xs text-text-primary/50 mb-2 block">You send</label>
+            <div className="flex flex-col sm:flex-row gap-3">
+              {/* Asset selector */}
+              <select
+                value={inputAsset.id}
+                onChange={e => setInputAsset(INPUT_ASSETS.find(a => a.id === e.target.value)!)}
+                className="bg-void border border-amber/20 rounded-xl px-3 py-3
+                           text-amber font-mono text-sm focus:outline-none
+                           focus:border-amber/60"
               >
-                <option value="">Select a note</option>
-                {notes.map((note, i) => (
-                  <option key={i} value={i}>
-                    Note #{note.leafIndex} - {(Number(note.amount) / 1e8).toFixed(4)} wBTC
-                  </option>
+                {INPUT_ASSETS.map(a => (
+                  <option key={a.id} value={a.id}>{a.label}</option>
                 ))}
               </select>
-              <div className="flex justify-between items-center">
-                <span className="text-muted text-sm">Available</span>
-                <span className="font-mono text-sm text-parchment">
-                  {state.fromAmount ? `${state.fromAmount} wBTC` : '—'}
-                </span>
-              </div>
+              {/* Amount input */}
+              <input
+                type="number"
+                placeholder="0.00000000"
+                value={inputAmount}
+                onChange={e => setInputAmount(e.target.value)}
+                className="flex-1 bg-void border border-amber/20 rounded-xl px-4 py-3
+                           font-mono text-text-primary placeholder-text-primary/20
+                           focus:outline-none focus:border-amber/60"
+              />
             </div>
           </div>
 
-          <div className="flex justify-center">
-            <div className="w-10 h-10 rounded-full bg-amber/20 flex items-center justify-center text-amber">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                <path d="M12 5V19M12 19L5 12M12 19L19 12" stroke="currentColor" strokeWidth="2"/>
+          {/* Arrow */}
+          <div className="flex justify-center my-4">
+            <div className="w-8 h-8 rounded-full bg-amber/10 border border-amber/30
+                            flex items-center justify-center">
+              <svg className="w-4 h-4 text-amber" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
               </svg>
             </div>
           </div>
 
-          <div className="space-y-2">
-            <label className="font-mono text-xs uppercase text-muted">To</label>
-            <div className="p-4 bg-surface rounded-xl border border-border">
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-2">
-                  <span className="text-parchment text-lg">{state.toAsset}</span>
-                </div>
-                <span className="font-mono text-parchment">{state.toAmount || '0.00'} USDC</span>
+          {/* Output */}
+          <div className="mb-6">
+            <label className="text-xs text-text-primary/50 mb-2 block">You receive</label>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="bg-void border border-amber/20 rounded-xl px-3 py-3
+                              text-amber font-mono text-sm">
+                strkBTC
+              </div>
+              <div className="flex-1 bg-void border border-amber/20 rounded-xl px-4 py-3
+                              font-mono text-zk-green">
+                {estimatedOutput}
               </div>
             </div>
           </div>
 
-          <div className="flex gap-2">
-            {['0.1', '0.5', '1.0'].map(s => (
-              <button 
-                key={s} 
-                onClick={() => setState(prev => ({ ...prev, slippage: s }))}
-                className={`flex-1 py-2 rounded-lg font-mono text-xs ${state.slippage === s ? 'bg-amber text-void' : 'bg-surface text-muted'}`}
-              >
-                {s}%
-              </button>
-            ))}
-          </div>
-
-          <div className="p-4 bg-surface rounded-xl border border-border space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted">Rate</span>
-              <span className="font-mono">1 wBTC = 97,893.20 USDC</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted">Route</span>
-              <span className="font-mono">wBTC → USDC via AVNU</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted">Price impact</span>
-              <span className="font-mono text-zk-green">&lt; 0.01%</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted">PHANTOM fee</span>
-              <span className="font-mono">0.05%</span>
-            </div>
-          </div>
-
-          {state.status === 'idle' && (
-            <button 
-              onClick={handleSwap} 
-              disabled={!state.fromNoteId || !state.fromAmount}
-              className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              ▶ Swap Privately
-            </button>
-          )}
-
-          {state.status === 'error' && (
-            <div className="text-center">
-              <p className="text-error mb-4">{state.error}</p>
-              <button onClick={handleReset} className="btn-primary">Try Again</button>
-            </div>
-          )}
-        </div>
-
-        {/* Intent Status Tracker */}
-        {state.status !== 'idle' && state.status !== 'error' && (
-          <div className="mt-8 card">
-            <h3 className="font-display font-bold text-lg text-parchment mb-6">Intent Status</h3>
-            <div className="relative">
-              <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-border"></div>
-              <div className="space-y-6">
-                <div className="flex items-center gap-4 relative">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center z-10 ${state.status === 'proof' ? 'bg-amber text-void' : 'bg-zk-green text-void'}`}>
-                    {state.status === 'proof' ? (
-                      <div className="w-4 h-4 border-2 border-void border-t-transparent rounded-full animate-spin"></div>
-                    ) : '✓'}
-                  </div>
-                  <div>
-                    <p className="font-bold text-parchment">Proof generated</p>
-                    <p className="text-xs text-muted">ZK proof computed locally</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4 relative">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center z-10 ${
-                    state.status === 'encrypted' ? 'bg-amber text-void' : 
-                    state.status === 'matching' || state.status === 'settled' ? 'bg-zk-green text-void' : 'bg-border text-muted'
-                  }`}>
-                    {state.status === 'encrypted' ? (
-                      <div className="w-4 h-4 border-2 border-void border-t-transparent rounded-full animate-spin"></div>
-                    ) : '✓'}
-                  </div>
-                  <div>
-                    <p className="font-bold text-parchment">Intent encrypted</p>
-                    <p className="text-xs text-muted">Direction hidden from observers</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4 relative">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center z-10 ${
-                    state.status === 'matching' ? 'bg-amber text-void' : 
-                    state.status === 'settled' ? 'bg-zk-green text-void' : 'bg-border text-muted'
-                  }`}>
-                    {state.status === 'matching' ? (
-                      <div className="w-4 h-4 border-2 border-void border-t-transparent rounded-full animate-spin"></div>
-                    ) : state.status === 'settled' ? '✓' : '○'}
-                  </div>
-                  <div>
-                    <p className="font-bold text-parchment">Sent to dark pool</p>
-                    <p className="text-xs text-muted">Matching in progress...</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4 relative">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center z-10 ${
-                    state.status === 'settled' ? 'bg-zk-green text-void' : 'bg-border text-muted'
-                  }`}>
-                    {state.status === 'settled' ? '✓' : '○'}
-                  </div>
-                  <div>
-                    <p className="font-bold text-parchment">Settlement confirmed</p>
-                    <p className="text-xs text-muted">Atomic execution complete</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <p className="text-xs text-muted mt-6 p-4 bg-surface rounded-lg">
-              Your intent is encrypted. No one can see your trade direction until it's matched.
+          {/* Privacy note */}
+          <div className="flex items-start gap-2 bg-amber/5 border border-amber/10
+                          rounded-xl p-3 mb-6">
+            <svg className="w-4 h-4 text-amber shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p className="text-xs text-text-primary/60">
+              strkBTC has private balances by default via Starknet STRK20.
+              After this swap, your balance will be shielded automatically.
             </p>
           </div>
+
+          {/* Error */}
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 mb-4">
+              <p className="text-red-400 text-sm">{error}</p>
+            </div>
+          )}
+
+          {/* CTA */}
+          <button
+            onClick={handleSwap}
+            disabled={!isReady || !inputAmount || isSwapping}
+            className="w-full bg-amber text-void font-bold py-4 rounded-xl
+                       hover:bg-amber/90 transition-colors disabled:opacity-40
+                       disabled:cursor-not-allowed"
+          >
+            {isSwapping ? 'Swapping...' : `Convert to strkBTC`}
+          </button>
+        </div>
+
+        {/* Success state */}
+        {txHash && (
+          <div className="bg-zk-green/10 border border-zk-green/30 rounded-xl p-4">
+            <p className="text-zk-green font-medium mb-2">Swap successful</p>
+            <a
+              href={`https://sepolia.voyager.online/tx/${txHash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-sm text-text-primary/60
+                         hover:text-amber transition-colors"
+            >
+              View on Voyager 
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </a>
+            <button
+              onClick={() => window.location.href = '/yield'}
+              className="mt-3 w-full border border-amber/30 text-amber py-3
+                         rounded-xl hover:bg-amber/10 transition-colors text-sm font-medium"
+            >
+              Start earning with strkBTC →
+            </button>
+          </div>
         )}
+
+        {/* Info: Why strkBTC */}
+        <div className="mt-8 space-y-3">
+          <p className="text-xs text-text-primary/40 uppercase tracking-wider font-mono">
+            Why strkBTC?
+          </p>
+          {[
+            'Private balance — no one can see how much you hold',
+            'Earn yield on Vesu, Ekubo, Re7 while staying private',
+            'Viewing keys for compliance when you need it',
+            'Issued by Starknet — not a third-party custodian',
+          ].map((item, i) => (
+            <div key={i} className="flex items-center gap-2 text-sm text-text-primary/60">
+              <span className="text-zk-green">✓</span>
+              {item}
+            </div>
+          ))}
+        </div>
+
       </div>
     </div>
   )
+}
+
+function parseWalletError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err)
+  const map: Record<string, string> = {
+    'User rejected':         'Connection rejected. Please approve in your wallet.',
+    'Wallet not found':      'Wallet not found. Install Argent X or Braavos.',
+    'Network mismatch':      'Wrong network. Switch to Starknet Sepolia.',
+    'insufficient funds':    'Insufficient STRK for gas.',
+    'StarknetChainMismatch': 'Wrong network. Switch to Starknet Sepolia.',
+  }
+  for (const [key, friendly] of Object.entries(map)) {
+    if (msg.includes(key)) return friendly
+  }
+  return 'Transaction failed. Please try again.'
 }

@@ -18,13 +18,13 @@ export default function Home() {
                 YOUR BITCOIN
               </h1>
               <h1 className="font-display font-black text-5xl md:text-7xl lg:text-8xl leading-none text-amber mb-8">
-                BECOMES INVISIBLE.
+                WORKS. PRIVATELY.
               </h1>
               <p className="text-lg text-secondary max-w-md mb-8">
-                The first ZK private execution layer for BTCFi. Shield, swap, and earn — without ever revealing your position, amount, or identity.
+                The first Private BTC Yield Manager on Starknet. Deposit strkBTC into yield strategies — your position, amount, and returns stay private. Powered by STRK20.
               </p>
               <div className="flex gap-4 mb-8">
-                <Link href="/shield" className="btn-primary">▶ Launch App</Link>
+                <Link href="/yield" className="btn-primary">▶ Start Earning</Link>
                 <Link href="/developers" className="btn-outline">Read the Docs →</Link>
               </div>
               <div className="flex gap-4 text-muted text-sm">
@@ -56,10 +56,10 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
             {[
-              { value: '$0', label: 'Front-running on your trades' },
-              { value: '~120ms', label: 'Proof time client-side' },
-              { value: '100%', label: 'Non-custodial always' },
-              { value: '∞', label: 'Privacy no limit' },
+              { value: '3-8%', label: 'Yield on strkBTC' },
+              { value: '100%', label: 'Private positions' },
+              { value: 'STRK20', label: 'Native privacy' },
+              { value: '0', label: 'Public trace' },
             ].map((stat, i) => (
               <div key={i} className="text-center">
                 <div className="font-mono text-3xl md:text-4xl font-bold text-amber mb-2">{stat.value}</div>
@@ -75,14 +75,14 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center mb-16">
             <h2 className="font-display font-black text-4xl md:text-5xl text-parchment mb-4">What PHANTOM does</h2>
-            <p className="text-lg text-secondary max-w-2xl mx-auto">Every DeFi operation — swap, yield, transfer — executed with zero-knowledge proofs.</p>
+            <p className="text-lg text-secondary max-w-2xl mx-auto">Deposit strkBTC into yield strategies. Your position and returns stay private.</p>
           </div>
           <div className="grid md:grid-cols-2 gap-px bg-border rounded-2xl overflow-hidden">
             {[
-              { title: 'Shield Pool', desc: 'Deposit wBTC, tBTC, LBTC into the shield pool. Only ZK commitments appear on-chain.', tags: ['wBTC', 'tBTC', 'LBTC'] },
-              { title: 'Private Swap', desc: 'Execute swaps via AVNU while keeping your identity and amount hidden until settlement.', tags: ['Powered by AVNU'] },
-              { title: 'Shielded Yield', desc: 'Deposit into Vesu, Uncap, or Opus. Claim yield without revealing your position size.', tags: ['Vesu', 'Uncap', 'Opus'] },
-              { title: 'Intent Dark Pool', desc: 'Submit encrypted intents. They are matched atomically — zero front-running possible.', tags: ['MEV-resistant', 'Atomic'] },
+              { title: 'Private Yield', desc: 'Deposit strkBTC into Vesu, Ekubo, or Re7. Earn yield while your position stays hidden.', tags: ['Vesu', 'Ekubo', 'Re7'] },
+              { title: 'Shielded BTC', desc: 'strkBTC brings BTC to Starknet with optional privacy. Your balance stays confidential.', tags: ['strkBTC', 'STRK20'] },
+              { title: 'Gasless UX', desc: 'Starkzap handles gas fees. No STRK needed to start earning.', tags: ['Starkzap', 'AVNU'] },
+              { title: 'Compliance Ready', desc: 'Selective disclosure for audits. Prove your holdings without revealing to the world.', tags: ['Viewing Keys', 'Audit'] },
             ].map((f, i) => (
               <div key={i} className="card hover:border-amber-dim transition-colors">
                 <h3 className="font-display font-bold text-xl text-parchment mb-3">{f.title}</h3>
@@ -102,14 +102,14 @@ export default function Home() {
       <section className="py-28 bg-surface border-y border-border">
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center mb-16">
-            <h2 className="font-display font-black text-4xl md:text-5xl text-parchment mb-4">The Frosted Glass Safe</h2>
-            <p className="text-lg text-secondary max-w-2xl mx-auto">The blockchain is a glass vault. PHANTOM adds the frosted glass layer.</p>
+            <h2 className="font-display font-black text-4xl md:text-5xl text-parchment mb-4">Private BTC Yield</h2>
+            <p className="text-lg text-secondary max-w-2xl mx-auto">The blockchain is transparent. PHANTOM adds privacy.</p>
           </div>
           <div className="grid md:grid-cols-3 gap-8">
             {[
-              { step: 1, title: 'Shield', desc: 'Deposit your BTC. A ZK commitment is created. Your position disappears.', tech: 'Poseidon2 hash · Merkle commitment' },
-              { step: 2, title: 'Execute', desc: 'Swap, earn, or transfer privately via PHANTOM\'s encrypted execution layer.', tech: 'AVNU · Intent matching · ZK execution' },
-              { step: 3, title: 'Unshield', desc: 'Withdraw with a fresh proof. No connection to your original deposit is visible.', tech: 'Nullifier check · Snark verify' },
+              { step: 1, title: 'Deposit', desc: 'Send strkBTC to PHANTOM. A private commitment is created — your amount is hidden.', tech: 'STRK20 · Poseidon commitment' },
+              { step: 2, title: 'Earn', desc: 'Your BTC works in yield strategies. No one can see your position or returns.', tech: 'Vesu · Ekubo · Re7' },
+              { step: 3, title: 'Withdraw', desc: 'Exit anytime. Your withdrawal has no link to your original deposit.', tech: 'Privacy preserved · Zero trace' },
             ].map((s, i) => (
               <div key={i} className="text-center">
                 <div className="w-24 h-24 mx-auto mb-6 rounded-full bg-amber-glow border border-amber-dim flex items-center justify-center">

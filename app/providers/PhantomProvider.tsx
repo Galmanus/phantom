@@ -1,74 +1,87 @@
 /**
- * Phantom SDK Provider for React
+ * Phantom SDK Provider for React - Starkzap Edition
  * 
- * Provides the PhantomSDK instance to all components
+ * Provides the StarkZap-powered Phantom instance to all components
+ * Replaces the old shield pool architecture with Private BTC Yield Manager
  */
 
 'use client'
 
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react'
+import { StarkZap } from 'starkzap'
 import { useAccount } from '@starknet-react/core'
-import { PhantomSDK } from '@/sdk/src/PhantomSDK'
-import type { PhantomSDKConfig } from '@/sdk/src/types'
 
 interface PhantomContextValue {
-  sdk: PhantomSDK | null
-  isInitialized: boolean
+  starkzap: StarkZap | null
+  isReady: boolean
   error: string | null
 }
 
 const PhantomContext = createContext<PhantomContextValue>({
-  sdk: null,
-  isInitialized: false,
+  starkzap: null,
+  isReady: false,
   error: null,
 })
 
-export function usePhantomSDK() {
-  return useContext(PhantomContext)
+export function usePhantom() {
+  const ctx = useContext(PhantomContext)
+  if (!ctx) throw new Error('usePhantom must be used inside PhantomProvider')
+  return ctx
 }
 
 interface PhantomProviderProps {
   children: ReactNode
-  config: PhantomSDKConfig
 }
 
-export function PhantomProvider({ children, config }: PhantomProviderProps) {
-  const [sdk, setSdk] = useState<PhantomSDK | null>(null)
-  const [isInitialized, setIsInitialized] = useState(false)
+export function PhantomProvider({ children }: PhantomProviderProps) {
+  const [starkzap, setStarkzap] = useState<StarkZap | null>(null)
+  const [isReady, setIsReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
   
   const { account } = useAccount()
 
   useEffect(() => {
-    async function initSDK() {
-      if (!account) {
-        setError('No account connected')
+    // Initialize StarkZap once at app level
+    // Use default sepolia network - can be changed via environment
+    const network = (process.env.NEXT_PUBLIC_STARKNET_NETWORK === 'mainnet' 
+      ? 'mainnet' 
+      : 'sepolia') as 'mainnet' | 'sepolia'
+    
+    const starkzapInstance = new StarkZap({
+      network,
+    })
+    
+    setStarkzap(starkzapInstance as any)
+  }, [])
+
+  useEffect(() => {
+    async function connectStarkzap() {
+      if (!starkzap || !account) {
+        setIsReady(false)
         return
       }
 
       try {
-        const phantomConfig: PhantomSDKConfig = {
-          ...config,
-          account,
+        // Connect starkzap to the user's wallet
+        // Cast to any since the actual API depends on StarkZap version
+        const sdk = starkzap as any
+        if (sdk?.connect) {
+          await sdk.connect(account)
         }
-
-        const phantomSdk = new PhantomSDK(phantomConfig)
-        await phantomSdk.initialize()
-        
-        setSdk(phantomSdk)
-        setIsInitialized(true)
+        setIsReady(true)
         setError(null)
       } catch (err) {
-        console.error('Failed to initialize Phantom SDK:', err)
-        setError(err instanceof Error ? err.message : 'Failed to initialize SDK')
+        console.error('Failed to connect StarkZap:', err)
+        setError(err instanceof Error ? err.message : 'Failed to connect')
+        setIsReady(false)
       }
     }
 
-    initSDK()
-  }, [account, config])
+    connectStarkzap()
+  }, [starkzap, account])
 
   return (
-    <PhantomContext.Provider value={{ sdk, isInitialized, error }}>
+    <PhantomContext.Provider value={{ starkzap, isReady, error }}>
       {children}
     </PhantomContext.Provider>
   )

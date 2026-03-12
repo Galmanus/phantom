@@ -25,7 +25,8 @@
   "dependencies": {
     "@noble/curves": "^2.0.1",
     "idb": "^8.0.0",
-    "starknet": "^6.0.0"
+    "starknet": "^6.0.0",
+    "starkzap": "^1.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

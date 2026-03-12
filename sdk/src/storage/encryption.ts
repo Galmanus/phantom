@@ -6,6 +6,17 @@
 const PBKDF2_ITERATIONS = 600000;
 
 /**
+ * Convert Uint8Array to ArrayBuffer safely
+ * TypeScript strict mode requires explicit casting
+ */
+function toArrayBuffer(data: Uint8Array): ArrayBuffer {
+  // Create a new ArrayBuffer and copy the data to avoid SharedArrayBuffer issues
+  const newBuffer = new ArrayBuffer(data.length);
+  new Uint8Array(newBuffer).set(data);
+  return newBuffer;
+}
+
+/**
  * Derive AES-GCM encryption key from password
  */
 export async function deriveEncryptionKey(
@@ -25,7 +36,7 @@ export async function deriveEncryptionKey(
   const key = await crypto.subtle.deriveKey(
     {
       name: 'PBKDF2',
-      salt: saltBytes,
+      salt: toArrayBuffer(saltBytes),
       iterations: PBKDF2_ITERATIONS,
       hash: 'SHA-256',
     },
@@ -53,7 +64,7 @@ export async function encrypt(
   const ciphertext = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv },
     key,
-    encoded
+    toArrayBuffer(encoded)
   );
 
   return {
@@ -71,9 +82,9 @@ export async function decrypt(
   key: CryptoKey
 ): Promise<string> {
   const decrypted = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv },
+    { name: 'AES-GCM', iv: toArrayBuffer(iv) },
     key,
-    ciphertext
+    toArrayBuffer(ciphertext)
   );
 
   return new TextDecoder().decode(decrypted);
@@ -105,7 +116,7 @@ export function generateRandomFieldElement(): string {
  * Hash data using SHA-256
  */
 export async function sha256(data: Uint8Array): Promise<Uint8Array> {
-  const hash = await crypto.subtle.digest('SHA-256', data);
+  const hash = await crypto.subtle.digest('SHA-256', toArrayBuffer(data));
   return new Uint8Array(hash);
 }
 
