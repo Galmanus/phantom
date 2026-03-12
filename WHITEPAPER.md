@@ -1,565 +1,295 @@
-# PHANTOM: A Zero-Knowledge Private Execution Layer for Bitcoin Finance on Starknet
+# PHANTOM Whitepaper
 
-## A Technical Whitepaper
+## Private BTC Yield Manager on Starknet
 
-**Version:** 1.0  
-**Date:** March 2026  
-**Author:** Manuel (@galmanus)
+**Version 1.0 — March 2026**
 
 ---
 
 ## Abstract
 
-We present PHANTOM, a zero-knowledge proof (ZKP) based privacy protocol enabling shielded transactions for Bitcoin-backed assets on Starknet. PHANTOM implements a UTXO-style shielded pool on top of Starknet's account abstraction model, achieving Bitcoin-native privacy properties in an EVM-compatible environment. The protocol supports five core primitives: shield deposits, private swaps, shielded yield, intent dark pools, and selective disclosure for regulatory compliance. Using STARKs (Scalable Transparent Arguments of Knowledge) via the Stwo proving system, PHANTOM achieves trustless setup elimination, quantum resistance (post-quantum available), and transparent verification.
+PHANTOM is the first Private BTC Yield Manager built on Starknet's native privacy infrastructure (strkBTC and STRK20). It enables Bitcoin holders to earn yield from DeFi protocols while maintaining complete privacy over their positions, amounts, and returns.
 
 ---
 
 ## 1. Introduction
 
-### 1.1 Background
+### 1.1 The Bitcoin Yield Problem
 
-Bitcoin Finance (BTCFi) on Starknet represents over $2B in total value locked (TVL) across lending protocols (Vesu), decentralized exchanges (AVNU), liquid staking (LBTC), and yield aggregators (Uncap, Opus). However, all positions and transactions are fully transparent on-chain, creating significant problems:
+Bitcoin is the world's largest cryptocurrency by market cap, yet it remains largely unproductive. Most BTC sits in wallets earning 0% yield while the same capital in DeFi earns 3-10% APY.
 
-1. **Maximal Extractable Value (MEV)**: Front-running and sandwich attacks on large trades
-2. **Strategy Theft**: Competitors copying successful trading strategies
-3. **Regulatory Burden**: Full transaction history required for compliance
-4. **Privacy Erosion**: Financial privacy fundamentally compromised
+The reasons are multifold:
 
-Traditional cryptocurrency privacy solutions (Zcash, Monero) operate in isolation. PHANTOM bridges Bitcoin-native privacy to the Starknet BTCFi ecosystem.
+1. **Privacy concerns** — Public DeFi positions expose holders to tracking, surveillance, and targeting
+2. **Technical friction** — Moving BTC to other chains requires bridges, wrapped tokens, and complex setups
+3. **Infrastructure gaps** — No privacy-preserving yield products existed for BTC on L2s
 
-### 1.2 Contributions
+### 1.2 The Starknet Opportunity
 
-1. **Shielded Pool Architecture**: First UTXO-style shielded pool on Starknet
-2. **Ring Buffer Merkle Tree**: Solving concurrent transaction contention
-3. **Selective Disclosure**: First-class compliance as a ZK primitive
-4. **Browser-Based Proving**: Client-side proof generation via WebAssembly
+On March 10, 2026, Starknet launched two critical infrastructure pieces:
 
----
+- **strkBTC** — A BTC-backed asset with optional shielding. Deposits can be private or public, with viewing keys for compliance.
+- **STRK20** — A privacy standard for all ERC-20 tokens, providing shielded balances, selective disclosure, and anonymous swaps.
 
-## 2. System Overview
-
-### 2.1 Threat Model
-
-We assume:
-- **Honest-but-Curious Users**: Follow protocol but may attempt to learn extra information
-- **Colluding Protocol Participants**: Up to n-1 participants may collude
-- **Blockchain Observer**: Can see all on-chain data but cannot break ZK assumptions
-
-We do not assume:
-- Trusted setup ceremonies (STARKs are transparent)
-- Honest majority of provers (trustless verification)
-- Opaque network layers (metadata analysis outside scope)
-
-### 2.2 Design Goals
-
-1. **Privacy**: Sender, recipient, amount, and history hidden from observers
-2. **Verifiability**: All transactions verifiable on-chain without revealing details
-3. **Usability**: User experience comparable to transparent DeFi
-4. **Compliance**: Regulatory proofs as first-class primitives
-5. **Performance**: Sub-second proving times for interactive use
+This eliminates the need to build custom privacy infrastructure. PHANTOM leverages these native layers to deliver a product, not infrastructure.
 
 ---
 
-## 3. Cryptographic Primitives
+## 2. System Architecture
 
-### 3.1 Hash Function: Poseidon2
+### 2.1 Overview
 
-PHANTOM uses Poseidon2, a ZK-friendly hash function based on a sponge construction with a 3-element state:
-
-**Parameters:**
-- Field: Starknet's BN254 scalar field (p = 2^251 + 17·2^192 + 1)
-- Rate: 2 elements
-- Capacity: 1 element
-- Full Rounds: 8
-- Partial Rounds: 83
-
-**S-Box:** x → x^5 (for p > 3)
-
-**MDS Matrix:**
 ```
-[[4, 1],
- [1, 4]]
+User Wallet (Argent X / Braavos)
+        ↓
+    Starkzap SDK
+        ↓
+    PhantomProvider (React Context)
+        ↓
+┌───────────────┐
+│ YieldRouter  │ ← Cairo contract
+│   (Cairo)    │
+└───────────────┘
+        ↓
+┌───────────────┐
+│   Strategies  │
+│ Vesu / Ekubo  │
+│    / Re7      │
+└───────────────┘
 ```
 
-The permutation π: F_p^3 → F_p^3 consists of:
-1. AddRoundConstants (3 elements per round)
-2. SubBytes (x^5 for each element)
-3. MixColumns (MDS multiplication)
+### 2.2 Components
+
+#### Starkzap SDK
+- Connects to user's wallet
+- Handles strkBTC operations (approve, transfer)
+- Provides token balance reading (shielded + public)
+
+#### PhantomProvider
+- React context wrapping the app
+- Initializes StarkZap instance
+- Exposes `starkzap` and `isReady` to all components
+
+#### PositionManager (SDK)
+- Generates position commitments
+- Opens/closes yield positions
+- Tracks positions in local encrypted storage
+
+#### YieldRouter (Cairo Contract)
+- Accepts strkBTC deposits
+- Routes to strategy contracts
+- Tracks commitments (not amounts)
+- Emits events (strategy, timestamp — not amounts)
+
+---
+
+## 3. Privacy Model
+
+### 3.1 What Gets Shielded
+
+| Data | Visibility | Mechanism |
+|------|------------|-----------|
+| Deposit amount | Private | STRK20 shielded transfer |
+| Strategy selection | Public | Event emission |
+| Position commitment | Public | Stored in contract |
+| Earned yield | Private | Accumulates in shielded balance |
+| Withdrawal amount | Private | STRK20 shielded transfer |
 
 ### 3.2 Commitment Scheme
 
-**Shield Commitment:**
-```
-C = Poseidon2(amount, asset_id, nullifier_secret, salt)
-```
+When a user opens a position:
 
-Where:
-- `amount`: u64 (0 < amount < 2^64)
-- `asset_id`: u8 (0-5 for supported assets)
-- `nullifier_secret`: random 251-bit field element
-- `salt`: random 251-bit field element
+1. Client generates `nonce` (random 32 bytes)
+2. Client computes `commitment = Poseidon(amount, strategy_id, nonce, ivk_hash)`
+3. Client calls `YieldRouter.open_position(commitment, strategy_id, amount, proof)`
+4. Contract stores `commitment → position` mapping
 
-**Nullifier:**
-```
-N = Poseidon2(nullifier_secret, serial_number)
-```
+The contract never sees the actual amount — only the commitment. The amount is known only to the user (stored client-side).
 
-The nullifier prevents double-spending while maintaining unlinkability.
+### 3.3 Viewing Keys
 
-### 3.3 Incremental Merkle Tree
+Users can generate viewing keys at `/compliance`:
 
-PHANTOM uses a sparse Merkle tree (SMT) with:
-- **Depth**: 32 (supports 2^32 notes)
-- **Hash**: Poseidon2
-- **Update complexity**: O(depth) = O(32)
+- **Full disclosure** — Prove exact balance and history
+- **Range proof** — Prove balance ≤ X without revealing actual
+- **Existence proof** — Prove transactions exist without amounts
 
-**Tree Operations:**
+This enables:
+- Tax reporting
+- Audit compliance
+- Institutional requirements
+
+---
+
+## 4. Yield Strategies
+
+### 4.1 Supported Strategies
+
+| Strategy | Protocol | Type | APY | Risk | Lock |
+|----------|----------|------|-----|------|------|
+| Vesu BTC Lending | Vesu | Lending | ~3.5% | Low | None |
+| Ekubo BTC/USDC LP | Ekubo | AMM | ~8.2% | Medium | None |
+| Re7 BTC Vault | Re7 | Vault | ~6.2% | Medium | 7 days |
+
+### 4.2 Strategy Integration
+
+Each strategy is a separate protocol. PHANTOM acts as an aggregator:
+
+1. User selects strategy in UI
+2. PositionManager generates commitment
+3. Starkzap approves strkBTC spend
+4. YieldRouter deposits to strategy contract
+5. Position tracked locally
+
+### 4.3 Future Strategies
+
+Potential additions:
+- Uncap BTC staking
+- Yearn-style vault rotation
+- Delta-neutral strategies
+
+---
+
+## 5. User Flow
+
+### 5.1 Onboarding
+
+1. User visits PHANTOM
+2. Connects wallet (Argent X or Braavos)
+3. Visits `/swap` to get strkBTC (bridge from L1 or swap)
+4. strkBTC appears in wallet (shielded by default)
+
+### 5.2 Opening a Position
+
+1. User visits `/yield`
+2. Selects strategy (Vesu, Ekubo, or Re7)
+3. Enters amount
+4. Confirms transaction
+5. Position opens — commitment stored on-chain
+6. Amount tracked locally only
+
+### 5.3 Monitoring
+
+1. User views dashboard at `/yield`
+2. Sees position count (not amounts — blurred)
+3. Clicks "Reveal" to see own amounts locally
+4. Yield estimates shown client-side
+
+### 5.4 Closing a Position
+
+1. User clicks "Withdraw" on position
+2. Confirms transaction
+3. YieldRouter withdraws from strategy
+4. strkBTC transferred to user (shielded)
+5. Position marked as closed locally
+
+---
+
+## 6. Contract Design
+
+### 6.1 YieldRouter
+
 ```cairo
-fn insert(ref self: ContractState, leaf: felt252) -> felt252 {
-    let index = self.next_leaf_index.read();
-    self.leaves.write(index.into(), leaf);
-    self.next_leaf_index.write(index + 1);
+#[starknet::contract]
+mod YieldRouter {
+    // Position stored as commitment → data (no amount)
+    // Strategy TVL aggregated (no per-user data)
     
-    // Update path to root
-    let mut current_index = index;
-    let mut current_hash = leaf;
+    fn open_position(
+        ref self: ContractState,
+        commitment: felt252,
+        strategy_id: u8,
+        strkbtc_amount: u128,
+    ) { ... }
     
-    for i in 0..32 {
-        let bit = current_index & 1;
-        let sibling = if bit == 0 {
-            self.get_leaf(current_index + 1)
-        } else {
-            self.get_leaf(current_index - 1)
-        };
-        current_hash = Poseidon2(current_hash, sibling);
-        current_index >>= 1;
-    }
-    
-    current_hash
+    fn close_position(
+        ref self: ContractState,
+        commitment: felt252,
+        original_amount: u128,
+    ) { ... }
 }
 ```
 
-### 3.4 Ring Buffer for State Contention
-
-**Problem:** Two users submitting unshield transactions simultaneously may prove against the same Merkle root R. If R becomes invalid before both transactions execute, one transaction fails.
-
-**Solution:** Store last N_ROOTS = 8 valid Merkle roots in a ring buffer:
+### 6.2 Events
 
 ```cairo
-const N_ROOTS: u8 = 8;
+// What gets emitted (public):
+PositionOpened { commitment, strategy, deposited_at }
+PositionClosed { commitment, closed_at }
 
-#[storage]
-struct Storage {
-    merkle_roots: LegacyMap<u8, felt252>,
-    current_root_index: u8,
-    root_count: u64,
-}
-
-fn is_valid_root(self: @ContractState, root: felt252) -> bool {
-    let mut i: u8 = 0;
-    loop {
-        if i >= N_ROOTS { break false; }
-        if self.merkle_roots.read(i) == root { break true; }
-        i += 1;
-    }
-}
-
-fn _store_historical_root(ref self: ContractState, root: felt252) {
-    let index = self.current_root_index.read();
-    self.merkle_roots.write(index, root);
-    self.current_root_index.write((index + 1) % N_ROOTS);
-    self.root_count.write(self.root_count.read() + 1);
-}
-```
-
-This ensures any of the last 8 roots is valid for proving.
-
----
-
-## 4. ZK Circuit Specifications
-
-### 4.1 Shield Circuit (4,300 constraints)
-
-**Purpose:** Prove knowledge of (amount, nullifier_secret, salt, asset_id) such that commitment C is correctly formed without revealing the values.
-
-**Public Inputs:**
-- `commitment` (251 bits)
-- `asset_id` (3 bits)
-
-**Private Inputs:**
-- `amount` (64 bits)
-- `nullifier_secret` (251 bits)
-- `salt` (251 bits)
-
-**Constraint Breakdown:**
-
-| Category | Constraints | Description |
-|----------|------------|-------------|
-| Poseidon2 Hash | ~2,000 | 3 permutations × ~667 per permutation |
-| Range Checks | ~1,000 | amount < 2^64 via bit decomposition |
-| Input Validation | ~500 | asset_id < 6, field validity |
-| Merkle Operations | ~800 | Tree path computation |
-| **Total** | **~4,300** | |
-
-**AIR Constraint Generation:**
-```rust
-pub fn generate_constraints(
-    commitment: &FieldElement,
-    asset_id: u8,
-    amount: &FieldElement,
-    nullifier_secret: &FieldElement,
-    salt: &FieldElement,
-) -> Vec<FieldElement> {
-    let mut constraints = Vec::new();
-    
-    // Constraint 1: amount > 0
-    let amount_is_zero = amount == FieldElement::ZERO;
-    constraints.push(if amount_is_zero { FieldElement::ONE } else { FieldElement::ZERO });
-    
-    // Constraint 2: amount < 2^64
-    let amount_val: u128 = /* decompose amount */;
-    let exceeds_range = amount_val >= (1u128 << 64);
-    constraints.push(if exceeds_range { FieldElement::ONE } else { FieldElement::ZERO });
-    
-    // Constraint 3: asset_id < 6
-    let asset_valid = (asset_id as u64) < 6u64;
-    constraints.push(if !asset_valid { FieldElement::ONE } else { FieldElement::ZERO });
-    
-    // Constraint 4: commitment = Poseidon(amount, asset_id, nullifier_secret, salt)
-    let computed = derive_commitment(amount, asset_id, nullifier_secret, salt);
-    let mismatch = commitment != computed;
-    constraints.push(if mismatch { FieldElement::ONE } else { FieldElement::ZERO });
-    
-    constraints
-}
-```
-
-### 4.2 Unshield Circuit (5,000 constraints)
-
-**Purpose:** Prove ownership of a note and authority to unshield, without revealing which note.
-
-**Public Inputs:**
-- `nullifier_hash`
-- `recipient` (Starknet address)
-- `amount`
-- `merkle_root`
-
-**Private Inputs:**
-- `note_commitment`
-- `nullifier_secret`
-- `merkle_path` (32 elements)
-- `salt`
-
-**Constraints:**
-1. Merkle path validity: root computed from path equals claimed root
-2. Nullifier uniqueness: nullifier not in spent registry
-3. Amount conservation: unshield amount matches note amount
-
-### 4.3 Private Swap Circuit (7,500 constraints)
-
-**Purpose:** Atomic swap between two shielded notes without revealing amounts.
-
-**Public Inputs:**
-- `nullifier_in`
-- `commitment_out`
-- `merkle_root`
-- `route_hash` (AVNU route commitment)
-
-**Constraints:**
-1. Input note exists in Merkle tree
-2. Output commitment correctly formed
-3. Amount conservation (accounting for fees)
-4. Route commitment matches
-
-### 4.4 Compliance Circuit (8,000 constraints)
-
-**Purpose:** Generate auditor-specific proofs without revealing full transaction details.
-
-**Proof Types:**
-1. **KycStatusOnly**: Proves KYC verified without identity disclosure
-2. **AmountBelowThreshold**: Proves amount < threshold without exact value
-3. **SanctionsCleared**: Proves no OFAC sanctions without addresses
-4. **FullAudit**: Complete proof for regulated entities
-
----
-
-## 5. Key Management
-
-### 5.1 Hierarchical Deterministic Keys
-
-PHANTOM derives keys from wallet signatures using SNIP-12:
-
-**Key Derivation Path:**
-```
-Wallet Signature → PBKDF2(600k) → Master Key
-                                    ├── IVK (Incoming Viewing Key)
-                                    └── FVK (Full Viewing Key)
-                                                       └── Per-note SK
-```
-
-**SNIP-12 Message:**
-```typescript
-const SIGNING_MESSAGE = {
-  domain: { name: 'PHANTOM', version: '1', chainId: 'SN_MAIN' },
-  types: {
-    StarkNetDomain: [
-      { name: 'name', type: 'shortstring' },
-      { name: 'version', type: 'shortstring' },
-      { name: 'chainId', type: 'shortstring' },
-    ],
-    PhantomKeyDerivation: [
-      { name: 'message', type: 'shortstring' },
-      { name: 'version', type: 'shortstring' },
-    ],
-  },
-  primaryType: 'PhantomKeyDerivation',
-  message: {
-    message: 'PHANTOM key derivation. Sign to initialize your private vault.',
-    version: '1',
-  },
-};
-```
-
-### 5.2 Note Encryption
-
-Notes are encrypted with AES-GCM-256 using the IVK:
-
-```typescript
-async function encryptNote(note: Note, ivk: Uint8Array): Promise<EncryptedNote> {
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const key = await deriveKey(ivk, 'PHANTOM_NOTE_v1');
-  
-  const ciphertext = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
-    key,
-    encodeNote(note)
-  );
-  
-  return { iv, ciphertext };
-}
+// What stays private:
+// - amount
+// - yield earned
+// - withdrawal amount
 ```
 
 ---
 
-## 6. Smart Contract Architecture
+## 7. Security Considerations
 
-### 6.1 PhantomPool
+### 7.1 Client-Side Security
 
-**Core Functions:**
-- `shield(asset_id, amount, commitment, proof)`: Deposit assets into pool
-- `unshield(recipient, amount, nullifier_hash, merkle_proof, proof)`: Withdraw
-- `swap(asset_in, amount_in, commitment_out, route_hash, proof)`: Private swap
+- Private keys stay in wallet (never touch PHANTOM)
+- Amounts stored locally (IndexedDB, encrypted)
+- Viewing keys derived from wallet seed
 
-**Storage:**
-```cairo
-#[storage]
-struct Storage {
-    // Shield state
-    next_leaf_index: u64,
-    leaves: LegacyMap<u32, felt252>,
-    nullifiers: LegacyMap<felt252, bool>,
-    merkle_roots: LegacyMap<u8, felt252>,
-    current_root_index: u8,
-    root_count: u64,
-    
-    // Asset support
-    supported_assets: LegacyMap<u8, bool>,
-    asset_balances: LegacyMap<(u8, ContractAddress), u256>,
-    
-    // Pending operations
-    pending_shields: LegacyMap<felt252, u64>,
-}
-```
+### 7.2 Smart Contract Security
 
-### 6.2 ComplianceOracle
+- Owner-only configuration
+- Pausable by admin
+- Reentrancy guards on deposits/withdrawals
 
-**Purpose:** Registry of compliance authorities and proof scope definitions.
+### 7.3 Privacy Guarantees
 
-**Functions:**
-- `register_authority(address, metadata)`: Add compliance authority
-- `request_proof(scope, authority)`: Request compliance proof
-- `submit_disclosure(proof, scope)`: Submit proof for record
-
-### 6.3 IntentMatcher
-
-**Purpose:** Dark pool for encrypted trade intents.
-
-**Flow:**
-1. User submits encrypted intent: `E(intent, recipient_pk)`
-2. Matcher collects intents, finds pairs
-3. Atomic execution: both intents settle or neither settles
+- Contract stores commitments only
+- No amount in storage or events
+- User controls local data
 
 ---
 
-## 7. Performance Analysis
+## 8. Roadmap
 
-### 7.1 Proving Times (1 CPU Core)
+### Phase 1 — Core (COMPLETE)
+- [x] Starkzap integration
+- [x] YieldRouter contract
+- [x] PositionManager SDK
+- [x] Strategy selector UI
+- [x] Viewing key generation
 
-| Circuit | Constraints | Proving Time | Verification |
-|---------|-------------|--------------|--------------|
-| Shield | 4,300 | 80-150ms | <10ms |
-| Unshield | 5,000 | 100-180ms | <10ms |
-| Swap | 7,500 | 150-280ms | <10ms |
-| Yield | 6,000 | 120-220ms | <10ms |
-| Compliance | 8,000 | 160-300ms | <10ms |
+### Phase 2 — Launch (Q2 2026)
+- [ ] Deploy to Starknet Sepolia
+- [ ] Integrate with Vesu, Ekubo, Re7
+- [ ] User testing and audits
+- [ ] Mainnet deployment
 
-### 7.2 Gas Costs (Estimated)
-
-| Operation | Gas (Starknet) |
-|-----------|----------------|
-| Shield | ~500K |
-| Unshield | ~600K |
-| Swap | ~800K |
-
----
-
-## 8. Security Analysis
-
-### 8.1 Privacy Guarantees
-
-**Theorem 1 (Sender Privacy):**  
-Given only on-chain data, the probability of correctly identifying the sender of a shielded transaction is at most 1/n, where n is the number of potential senders.
-
-*Proof:* The commitment C = Poseidon(amount, asset, secret, salt) reveals no information about inputs due to Poseidon2's collision resistance and the sender's secret being uniformly random.
-
-**Theorem 2 (Amount Privacy):**  
-The probability of determining the exact transaction amount from on-chain data is negligible.
-
-*Proof:* The commitment hides amount via Pedersen hashing. Even with repeated transactions, amounts are unlinkable due to random salts.
-
-**Theorem 3 (Unlinkability):**  
-No on-chain observer can link a shield transaction to its corresponding unshield transaction.
-
-*Proof:* The nullifier N = Poseidon(secret, serial) is computed from a different secret than the commitment. Without the secret, no linking is possible.
-
-### 8.2 Completeness
-
-**Theorem 4 (Proof Completeness):**  
-For any valid witness (amount, nullifier_secret, salt, merkle_path) satisfying constraints, the ZK proof verifies with probability 1.
-
-*Proof:* The circuit constraints are satisfied by construction for valid witnesses. The verifier accepts all such proofs.
-
-### 8.3 Soundness
-
-**Theorem 5 (Proof Soundness):**  
-If a proof verifies, then there exists a witness satisfying all constraints.
-
-*Proof:* Follows from STARK soundness: verified proofs imply witness existence with overwhelming probability (2^-128 for 128-bit security).
+### Phase 3 — Growth (Q3-Q4 2026)
+- [ ] More yield strategies
+- [ ] Mobile app
+- [ ] Institutional onboarding
+- [ ] Governance token (optional)
 
 ---
 
-## 9. Regulatory Compliance
+## 9. Team
 
-### 9.1 Selective Disclosure Architecture
+**Founder:** Manuel (@galmanus, @streetxsmart) — Florianópolis, Brazil
 
-PHANTOM treats compliance as a first-class primitive:
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                   ComplianceOracle                            │
-├─────────────────────────────────────────────────────────────┤
-│  Registered Authorities:                                       │
-│  - Chainalysis (ID: 0x01)                                   │
-│  - Elliptic (ID: 0x02)                                       │
-│  - Merkle Science (ID: 0x03)                                │
-├─────────────────────────────────────────────────────────────┤
-│  Proof Scopes:                                               │
-│  - KycStatusOnly    (0x01): Proves KYC passed              │
-│  - AmountBelowThreshold (0x02): Proves <$10K                │
-│  - SanctionsCleared (0x04): Proves no OFAC                  │
-│  - FullAudit        (0x08): Complete disclosure            │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### 9.2 Proof Generation
-
-```typescript
-async function generateComplianceProof(
-  notes: Note[],
-  scope: ProofScope,
-  authorityPubkey: Uint8Array
-): Promise<ComplianceProof> {
-  const circuit = getComplianceCircuit(scope);
-  
-  const input = {
-    notes: notes.map(n => n.commitment),
-    scope: scope.value,
-    authority_pk: authorityPubkey,
-  };
-  
-  const proof = await prover.prove(circuit, input);
-  
-  return {
-    proof,
-    scope,
-    timestamp: Date.now(),
-    expiry: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
-  };
-}
-```
+**Background:** Starknet community builder, connected to Starknet Foundation (Omar Espejel, Teddy Pender, Gnana, Szu). Previous work noticed by Eli Ben-Sasson.
 
 ---
 
-## 10. Related Work
+## 10. Conclusion
 
-| Protocol | Chain | Privacy Model | Compliance |
-|----------|-------|---------------|------------|
-| Zcash | Bitcoin | UTXO Shielded | Optional transparent |
-| Tornado Cash | Ethereum | UTXO Shielded | None |
-| Aztec | Ethereum | UTXO Shielded | Note encryption |
-| Railgun | Multi-chain | UTXO Shielded | None |
-| **PHANTOM** | **Starknet** | **UTXO Shielded** | **Selective Disclosure** |
+PHANTOM transforms how Bitcoin holders access DeFi yield. By building on Starknet's native privacy infrastructure (strkBTC and STRK20), PHANTOM delivers:
 
-**Differentiators:**
-1. First shielded pool on Starknet
-2. Native BTCFi integration (wBTC, tBTC, LBTC, SolvBTC)
-3. First-class compliance via ComplianceOracle
-4. Browser-based proving via WASM
+- **True privacy** — Positions, amounts, and returns stay hidden
+- **Native integration** — Uses existing infrastructure, not custom builds
+- **One-click yield** — Simple UX for earning on BTC
+- **Compliance-ready** — Viewing keys for institutions
+
+The product is ready. The infrastructure is ready. It's time to bring private BTC yield to Starknet.
 
 ---
 
-## 11. Conclusion
-
-PHANTOM provides comprehensive privacy for Bitcoin Finance on Starknet while maintaining regulatory compliance through selective disclosure. The protocol's architecture enables:
-
-- **Privacy**: Complete transaction hiding via ZK proofs
-- **Usability**: Browser-based proving in <300ms
-- **Compliance**: Regulator-specific proofs without full disclosure
-- **Interoperability**: Native integration with BTCFi protocols
-
-Future work includes:
-- Quantum-resistant upgrades (post-quantum ZK)
-- Multi-asset shielded pools
-- Cross-chain privacy bridges
-
----
-
-## References
-
-[1] Poseidon2: https://eprint.iacr.org/2023/318  
-[2] Stwo Prover: https://github.com/starkware-libs/stwo  
-[3] SNIP-12: https://github.com/starknet-io/SNIPs/blob/main/SNIP-12.md  
-[4] Cairo Language: https://docs.cairo-lang.org  
-[5] Starknet: https://docs.starknet.io  
-
----
-
-## Appendix A: Circuit Constraint Counts
-
-| Circuit | Poseidon2 | Range Check | Input Valid | Merkle | **Total** |
-|---------|------------|-------------|-------------|--------|-----------|
-| Shield | 2,000 | 1,000 | 500 | 800 | **4,300** |
-| Unshield | 2,500 | 1,200 | 500 | 800 | **5,000** |
-| Swap | 3,500 | 1,500 | 1,000 | 1,500 | **7,500** |
-| Yield | 2,800 | 1,400 | 800 | 1,000 | **6,000** |
-| Compliance | 4,000 | 2,000 | 1,000 | 1,000 | **8,000** |
-
----
-
-## Appendix B: Deployment Addresses (Sepolia Testnet)
-
-*To be deployed*
-
----
-
-*© 2026 PHANTOM Protocol. MIT License.*
+*March 2026*
+*PHANTOM Protocol*

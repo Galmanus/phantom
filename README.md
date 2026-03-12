@@ -1,42 +1,93 @@
-# PHANTOM — Private BTC Yield Manager on Starknet
+# PHANTOM — Private BTC Yield Manager
 
 ![PHANTOM Logo](phantom-zk.jpeg)
 
-**The first Private BTC Yield Manager on Starknet. Built on strkBTC and STRK20.**
+**Earn yield on your Bitcoin. Keep it private.**
+
+PHANTOM is the first Private BTC Yield Manager on Starknet. Built on strkBTC and STRK20, PHANTOM lets you earn yield from leading DeFi protocols while keeping your position, amount, and returns completely private.
 
 ---
 
-## What PHANTOM Is Now
+## The Problem
 
-**Before March 10, 2026:** "A shield pool for BTC-backed assets on Starknet, waiting for Stwo"
+Bitcoin holders want to earn yield on their assets, but:
 
-**After March 10, 2026:** "The first Private BTC Yield Manager on Starknet, built on STRK20 and strkBTC"
+1. **Public positions expose you** — Every DeFi interaction is visible on-chain. Your positions, strategies, and returns are public knowledge.
+2. **Institutional requirements** — Institutions need privacy for compliance, but existing solutions force a choice between yield and privacy.
+3. **Fragmented experience** — Getting private BTC, moving it to DeFi, and managing yield requires multiple protocols and complex workflows.
 
-PHANTOM now lets you earn yield on your Bitcoin while keeping your position, amount, and returns private. Powered by Starknet's native privacy layer.
+---
+
+## The Solution
+
+PHANTOM combines strkBTC's privacy with integrated yield strategies:
+
+- **Private by default** — Your deposits, positions, and returns are shielded. Only you can see your balance.
+- **Built on native infrastructure** — Uses Starknet's strkBTC and STRK20, not custom privacy infrastructure.
+- **One-click yield** — Select a strategy, deposit, and start earning. No complex setup.
+- **Compliance-ready** — Generate viewing keys to prove holdings to auditors without revealing everything.
 
 ---
 
 ## How It Works
 
 ### 1. Get strkBTC
-Convert your wBTC, tBTC, LBTC, or SolvBTC to strkBTC. strkBTC is Starknet's native private Bitcoin token with optional shielding built-in.
 
-### 2. Deposit into Yield Strategies
-Choose from three strategies:
-- **Vesu** — BTC lending (3.5% APY)
-- **Ekubo** — BTC/USDC LP (8.2% APY)
-- **Re7** — Managed BTC vault (6.2% APY)
+Convert wBTC, tBTC, LBTC, or SolvBTC to strkBTC through the `/swap` page. strkBTC is Starknet's native private Bitcoin with built-in shielding.
 
-### 3. Earn Privately
-Your position, amount, and returns stay hidden on-chain. Only you can see your balance. Use viewing keys to prove your holdings to auditors when needed.
+### 2. Select a Yield Strategy
+
+Choose from integrated strategies:
+
+| Strategy | Protocol | Type | APY | Lock Period |
+|----------|----------|------|-----|-------------|
+| Vesu BTC Lending | Vesu | Lending | ~3.5% | None |
+| Ekubo BTC/USDC LP | Ekubo | LP | ~8.2% | None |
+| Re7 BTC Vault | Re7 | Vault | ~6.2% | 7 days |
+
+### 3. Deposit and Earn
+
+Your BTC is deposited into the strategy. Your position commitment is stored on-chain, but the amount stays private. Yield accumulates in your shielded balance.
+
+### 4. Withdraw Anytime
+
+Close your position to withdraw your original deposit plus earned yield. No one can see how much you earned.
+
+---
+
+## Privacy Architecture
+
+### Shielded Balances
+
+All PHANTOM positions use STRK20's privacy layer:
+- **Commitments** — Position existence is public, but amount is not
+- **Nullifiers** — Prevents double-spending without revealing amounts
+- **Viewing Keys** — Optional disclosure for compliance
+
+### Viewing Keys
+
+Generate a viewing key at `/compliance` to:
+- Prove your exact balance to auditors
+- Generate range proofs (prove amount ≤ X without revealing actual)
+- Show transaction history without exposing balances
+
+### What's Public vs Private
+
+| Data | Visibility |
+|------|------------|
+| Position exists | Public (commitment) |
+| Strategy used | Public |
+| Deposit amount | Private |
+| Earned yield | Private |
+| Withdrawal amount | Private |
 
 ---
 
 ## Technology Stack
 
-- **strkBTC** — BTC-backed asset with optional privacy
-- **STRK20** — Starknet's native privacy standard for ERC-20 tokens
-- **Starkzap SDK** — Integration layer for BTC staking and DeFi
+- **strkBTC** — Bitcoin-backed asset with optional shielding
+- **STRK20** — Starknet's native privacy standard for ERC-20
+- **Starkzap SDK** — Wallet integration and token operations
 - **Next.js 14** — Frontend framework
 - **Starknet React** — Wallet connection (Argent X, Braavos)
 - **Cairo** — Smart contracts
@@ -44,8 +95,6 @@ Your position, amount, and returns stay hidden on-chain. Only you can see your b
 ---
 
 ## Getting Started
-
-### Installation
 
 ```bash
 # Install dependencies
@@ -55,24 +104,17 @@ npm install
 npm run dev
 ```
 
-Visit http://localhost:3000 to use the app.
+Visit http://localhost:3000
 
-### Configuration
+### Environment Variables
 
-Copy `.env.example` to `.env.local` and configure:
+Copy `.env.example` to `.env.local`:
 
-```bash
-# Starknet
+```env
 NEXT_PUBLIC_STARKNET_NETWORK=sepolia
 NEXT_PUBLIC_STARKNET_RPC_URL=https://starknet-sepolia.public.blastapi.io/rpc/v0_7
-
-# strkBTC (TBD when launched)
 NEXT_PUBLIC_STRKBTC_ADDRESS=
-
-# PHANTOM Yield Router (deploy yield_router.cairo)
 NEXT_PUBLIC_YIELD_ROUTER_ADDRESS=
-
-# Strategy contracts
 NEXT_PUBLIC_VESU_POOL_ADDRESS=
 NEXT_PUBLIC_EKUBO_POOL_ADDRESS=
 NEXT_PUBLIC_RE7_VAULT_ADDRESS=
@@ -87,59 +129,25 @@ phantom/
 ├── app/                    # Next.js pages
 │   ├── page.tsx            # Landing page
 │   ├── yield/              # Yield strategy selector
-│   ├── swap/               # Get strkBTC
+│   ├── swap/               # Get strkBTC (onboarding)
 │   ├── shield/             # Shielding info
-│   ├── compliance/          # Viewing key generator
+│   ├── compliance/         # Viewing key generator
 │   └── developers/         # API documentation
 ├── components/             # React components
-│   └── layout/Nav.tsx      # Navigation
 ├── hooks/                  # Custom hooks
-│   └── useStrkBTC.ts       # strkBTC balance hook
+│   └── useStrkBTC.ts       # strkBTC balance
 ├── sdk/                    # SDK
-│   ├── src/
-│   │   ├── strategies/     # Yield strategies
-│   │   ├── PositionManager.ts  # Position management
-│   │   ├── PhantomSDK.ts   # Main SDK
-│   │   └── key-derivation.ts  # Key management
-│   └── package.json
+│   └── src/
+│       ├── strategies/     # Yield strategies
+│       └── PositionManager.ts
 ├── contracts/              # Cairo contracts
-│   └── yield_router/       # Yield router contract
-└── circuits/               # ZK circuits (legacy, STRK20 handles now)
+│   └── yield_router/       # Yield routing
+└── circuits/               # Legacy ZK (STRK20 handles now)
 ```
 
 ---
 
-## Architecture
-
-### Frontend
-- **Framework:** Next.js 14 with App Router
-- **Styling:** Tailwind CSS with amber/void design system
-- **Wallet:** starknet-react (Argent X, Braavos)
-- **Data:** Local storage + IndexedDB for positions
-
-### SDK
-- **PositionManager:** Opens/closes yield positions
-- **NoteStore:** Local encrypted storage for positions
-- **Key Derivation:** Generates viewing keys for compliance
-
-### Contracts
-- **YieldRouter:** Routes deposits to yield strategies, tracks positions
-
----
-
-## Compliance
-
-PHANTOM supports selective disclosure through viewing keys:
-
-- **Full History** — Prove all transactions and amounts
-- **Range Proof** — Prove amount is within a range without revealing exact
-- **Existence Only** — Prove transactions exist without amounts
-
-Generate a viewing key at `/compliance` and share with auditors or regulators.
-
----
-
-## Development
+## Development Commands
 
 ```bash
 # Build frontend
@@ -151,7 +159,7 @@ npm run sdk:build
 # Test SDK
 npm run sdk:test
 
-# Deploy contracts (Sepolia)
+# Deploy to Sepolia
 ./scripts/deploy_sepolia.sh
 ```
 
@@ -159,19 +167,21 @@ npm run sdk:test
 
 ## Roadmap
 
-- [x] Phase 1: Core yield functionality (Mar 2026)
-- [x] Phase 2: Frontend completion (Mar 2026)
-- [ ] Deploy YieldRouter to Sepolia
-- [ ] Test position open/close flow
-- [ ] Connect with Starknet Foundation
+- [x] Integrate Starkzap SDK
+- [x] Create yield strategies (Vesu, Ekubo, Re7)
+- [x] Build PositionManager SDK
+- [x] Deploy YieldRouter to Sepolia
+- [ ] Launch on Starknet mainnet
+- [ ] Add more yield strategies
+- [ ] Implement governance
 
 ---
 
 ## Links
 
-- **Website:** https://phantom.btc (coming soon)
-- **Discord:** (coming soon)
+- **Website:** https://phantom.btc
 - **Twitter:** @phantom_btc
+- **GitHub:** github.com/Galmanus/phantom
 
 ---
 
