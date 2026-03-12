@@ -8,7 +8,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Galmanus/phantom/main/phantom.jpeg">
-    <img src="https://raw.githubusercontent.com/Galmanus/phantom/main/phantom.jpeg" alt="PHANTOM Logo" width="200">
+    <img src="https://raw.githubusercontent.com/Galmanus/phantom/main/phantom.jpeg" alt="PHANTOM Logo" width="400">
   </picture>
 </p>
 
