@@ -14,6 +14,9 @@ export declare const PhantomPoolABI: readonly [{
         readonly name: "commitment";
         readonly type: "felt252";
     }, {
+        readonly name: "encrypted_note";
+        readonly type: "ByteArray";
+    }, {
         readonly name: "proof";
         readonly type: "Span<felt252>";
     }];
@@ -132,7 +135,7 @@ export declare const PhantomPoolABI: readonly [{
     readonly type: "event";
     readonly name: "Shielded";
     readonly keys: readonly ["commitment", "asset_id"];
-    readonly data: readonly ["leaf_index", "new_merkle_root"];
+    readonly data: readonly ["leaf_index", "new_merkle_root", "encrypted_note"];
 }, {
     readonly type: "event";
     readonly name: "Unshielded";

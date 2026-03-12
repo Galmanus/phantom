@@ -171,9 +171,11 @@ mod phantom_merkle_impl {
         }
 
         fn _get_node(self: @ContractState, level: u8, index: u32) -> felt252 {
-            match self.nodes.read((level, index)) {
-                Option::Some(node) => node,
-                Option::None => ZERO_HASHES[level as usize],
+            let stored = self.nodes.read((level, index));
+            if stored == 0 {
+                ZERO_HASHES[level as usize]
+            } else {
+                stored
             }
         }
     }

@@ -28,6 +28,7 @@ export interface ShieldedNote {
     merkleRoot: FieldElement;
     createdAt: number;
     spent: boolean;
+    status?: 'pending' | 'confirmed' | 'spent' | 'failed';
 }
 export interface YieldPosition {
     depositCommitment: FieldElement;
@@ -114,8 +115,8 @@ export interface PrivateSwapEvent {
 }
 export declare class PhantomError extends Error {
     code: string;
-    details?: Record<string, unknown> | undefined;
-    constructor(message: string, code: string, details?: Record<string, unknown> | undefined);
+    details?: Record<string, unknown>;
+    constructor(message: string, code: string, details?: Record<string, unknown>);
 }
 export declare class ProofGenerationError extends PhantomError {
     constructor(message: string, details?: Record<string, unknown>);
@@ -124,6 +125,9 @@ export declare class TransactionError extends PhantomError {
     constructor(message: string, details?: Record<string, unknown>);
 }
 export declare class StorageError extends PhantomError {
+    constructor(message: string, details?: Record<string, unknown>);
+}
+export declare class NoteSelectionError extends PhantomError {
     constructor(message: string, details?: Record<string, unknown>);
 }
 //# sourceMappingURL=types.d.ts.map

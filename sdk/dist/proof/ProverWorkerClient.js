@@ -19,9 +19,11 @@ export class ProverWorkerClient {
             return;
         return new Promise((resolve, reject) => {
             try {
-                this.worker = new Worker(new URL('../../frontend/workers/prover.worker.ts', import.meta.url));
+                // Worker loaded from public/workers directory
+                this.worker = new Worker('/workers/prover.worker.js');
                 this.worker.onmessage = (event) => {
-                    this.handleResponse(event.data);
+                    const data = event.data;
+                    this.handleResponse(data);
                 };
                 this.worker.onerror = (error) => {
                     console.error('Worker error:', error);
@@ -57,10 +59,10 @@ export class ProverWorkerClient {
      * Handle response from worker
      */
     handleResponse(response) {
-        const pending = this.pendingRequests.get(response.id);
+        const pending = this.pendingRequests.get(response.id || '');
         if (!pending)
             return;
-        this.pendingRequests.delete(response.id);
+        this.pendingRequests.delete(response.id || '');
         if (response.success && response.result !== undefined) {
             pending.resolve(response.result);
         }

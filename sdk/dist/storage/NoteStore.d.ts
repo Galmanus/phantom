@@ -7,7 +7,7 @@
  * - Notes are NEVER stored in plain text
  * - Encryption key is derived from user password via PBKDF2
  */
-import type { ShieldedNote, YieldPosition, IntentReceipt } from './types';
+import type { ShieldedNote, YieldPosition, IntentReceipt } from '../types';
 export declare class NoteStore {
     private password;
     private db;
@@ -42,10 +42,6 @@ export declare class NoteStore {
      * Get all shielded notes
      */
     getAllNotes(): Promise<ShieldedNote[]>;
-    /**
-     * Mark a note as spent
-     */
-    markNoteSpent(commitment: string): Promise<void>;
     /**
      * Delete a note
      */
@@ -86,5 +82,62 @@ export declare class NoteStore {
      * Utility: Base64 to ArrayBuffer
      */
     private base64ToArrayBuffer;
+    /**
+     * Get notes by status
+     *
+     * OBSTACLE 1: Used by SDK to select only confirmed notes for new proofs,
+     * preventing concurrent spending of the same UTXO.
+     */
+    getNotesByStatus(assetId: number, status: 'pending' | 'confirmed' | 'spent' | 'failed'): Promise<ShieldedNote[]>;
+    /**
+     * Count notes by status
+     */
+    countByStatus(assetId: number, status: string): Promise<number>;
+    /**
+     * Select notes for a new proof - ONLY returns confirmed notes
+     *
+     * OBSTACLE 1 CORE SOLUTION:
+     * This method applies an automatic offset to skip pending notes,
+     * preventing the same UTXO from being selected in concurrent proofs.
+     *
+     * This is the exact mechanism described in Aztec's forum post:
+     * "offset-based note selection" to solve UTXO concurrency.
+     */
+    selectNotesForProof(assetId: number, amount: bigint, strategy?: 'oldest_first' | 'smallest_first'): Promise<ShieldedNote[]>;
+    /**
+     * Mark notes with a specific status
+     */
+    markNotesStatus(commitments: string[], status: 'pending' | 'confirmed' | 'spent' | 'failed'): Promise<void>;
+    /**
+     * Update note status
+     */
+    updateNoteStatus(commitment: string, status: 'pending' | 'confirmed' | 'spent' | 'failed'): Promise<void>;
+    /**
+     * Update leaf index
+     */
+    updateLeafIndex(commitment: string, leafIndex: number): Promise<void>;
+    /**
+     * Restore notes to confirmed status after failed transaction
+     *
+     * OBSTACLE 1: If a transaction reverts, we restore the notes
+     * so they can be used in future transactions.
+     */
+    restoreNotesAfterFailure(commitments: string[]): Promise<void>;
+    /**
+     * Confirm note after seeing it in a block
+     *
+     * Called when a Shield event is detected on-chain
+     */
+    confirmNote(commitment: string, leafIndex: number): Promise<void>;
+    /**
+     * Mark note as spent
+     */
+    markNoteSpent(commitment: string): Promise<void>;
+    /**
+     * Standard coin selection (greedy algorithm)
+     *
+     * Minimizes the number of notes used to cover the target amount.
+     */
+    private coinSelect;
 }
 //# sourceMappingURL=NoteStore.d.ts.map

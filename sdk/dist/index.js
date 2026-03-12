@@ -6,11 +6,14 @@
 export { PhantomSDK } from './PhantomSDK';
 export { NoteStore } from './storage/NoteStore';
 export { ProverWorkerClient } from './proof/ProverWorkerClient';
+export { PhantomKeyManager } from './key-derivation';
+export { encryptNote, decryptNote, encryptNoteWithIVK, decryptNoteWithIVK } from './key-derivation';
 export * from './types';
 export * from './constants';
 export * from './storage/encryption';
 export * from './storage/backup';
 export * from './proof/ProofTypes';
+export * from './key-derivation';
 // Contract ABIs
 export { PhantomPoolABI } from './contracts/PhantomPoolABI';
 export { ComplianceOracleABI } from './contracts/PhantomPoolABI';

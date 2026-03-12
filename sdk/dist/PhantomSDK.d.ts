@@ -20,6 +20,13 @@ export declare class PhantomSDK {
      */
     destroy(): void;
     /**
+     * Encrypt note data for on-chain recovery
+     *
+     * OBSTACLE 4 SOLUTION: The encrypted_note is emitted in the Shielded event,
+     * allowing users to recover their notes from chain events using their IVK.
+     */
+    private encryptNoteForRecovery;
+    /**
      * Deposit assets into the shield pool
      */
     shield(params: {

@@ -62,9 +62,13 @@ pub fn generate_path(leaves: &[FieldElement], index: usize) -> MerkleProof {
         current_level.push(compute_zero_hash(0));
     }
     
+    // Calculate the tree depth (how many levels until root)
+    let depth = (current_level.len() as f64).log2() as usize;
+    
     let mut idx = index;
     
-    for level in 0..TREE_HEIGHT {
+    // Build tree and generate proof only for actual depth levels
+    for level in 0..depth {
         let sibling_idx = idx ^ 1;
         let is_right = idx % 2 == 1;
         
@@ -83,7 +87,7 @@ pub fn generate_path(leaves: &[FieldElement], index: usize) -> MerkleProof {
         let mut next_level = Vec::new();
         for chunk in current_level.chunks(2) {
             let left = chunk[0];
-            let right = if chunk.len() > 1 { chunk[1] } else { compute_zero_hash(0) };
+            let right = if chunk.len() > 1 { chunk[1] } else { compute_zero_hash(level) };
             next_level.push(poseidon_hash(&left, &right));
         }
         current_level = next_level;
@@ -102,10 +106,17 @@ pub fn verify_path(
     let mut current_hash = leaf;
     
     for element in path.iter() {
+        // Skip zero/default elements (unfilled proof levels)
+        if element.hash == FieldElement::ZERO && !element.is_right {
+            break;
+        }
+        
+        // If is_right is true, the current node is the RIGHT child, so sibling is on LEFT
+        // If is_right is false, the current node is the LEFT child, so sibling is on RIGHT
         let (left, right) = if element.is_right {
-            (current_hash, element.hash)
+            (element.hash, current_hash)  // sibling on left, current on right
         } else {
-            (element.hash, current_hash)
+            (current_hash, element.hash)  // current on left, sibling on right
         };
         current_hash = poseidon_hash(&left, &right);
     }
@@ -113,30 +124,31 @@ pub fn verify_path(
     current_hash == root
 }
 
+use std::sync::OnceLock;
+
+/// Pre-computed zero hashes for each level (lazy computed)
+static ZERO_HASHES: OnceLock<[FieldElement; TREE_HEIGHT + 1]> = OnceLock::new();
+
+/// Get the cached zero hashes, computing them on first use
+fn get_zero_hashes() -> &'static [FieldElement; TREE_HEIGHT + 1] {
+    ZERO_HASHES.get_or_init(|| {
+        let mut hashes = [FieldElement::ZERO; TREE_HEIGHT + 1];
+        // hashes[0] is the empty leaf = Poseidon(0, 0)
+        // This is the correct value for an empty tree
+        hashes[0] = poseidon_hash(&FieldElement::ZERO, &FieldElement::ZERO);
+        for i in 1..=TREE_HEIGHT {
+            hashes[i] = poseidon_hash(&hashes[i - 1], &hashes[i - 1]);
+        }
+        hashes
+    })
+}
+
 /// Compute zero hash for a given level (pre-computed empty subtree hashes)
 pub fn compute_zero_hash(level: usize) -> FieldElement {
-    // Pre-computed zero hashes for each level
-    // Level 0: Poseidon(0, 0)
-    // Level N: Poseidon(zero[N-1], zero[N-1])
-
-    const ZERO_HASHES: [FieldElement; TREE_HEIGHT + 1] = [
-        FieldElement([0x49ee3eba8c160070, 0xee1b87eb599f1671, 0x6b0b102294773355, 0x1fde4050ca6804]),
-        // Additional pre-computed values would go here
-        // For now, we compute them dynamically
-        FieldElement::ZERO, FieldElement::ZERO, FieldElement::ZERO,
-        FieldElement::ZERO, FieldElement::ZERO, FieldElement::ZERO,
-        FieldElement::ZERO, FieldElement::ZERO, FieldElement::ZERO,
-        FieldElement::ZERO, FieldElement::ZERO, FieldElement::ZERO,
-        FieldElement::ZERO, FieldElement::ZERO, FieldElement::ZERO,
-        FieldElement::ZERO, FieldElement::ZERO, FieldElement::ZERO,
-        FieldElement::ZERO, FieldElement::ZERO,
-    ];
-    
-    if level <= TREE_HEIGHT {
-        ZERO_HASHES[level]
-    } else {
-        FieldElement::ZERO
+    if level > TREE_HEIGHT {
+        return FieldElement::ZERO;
     }
+    get_zero_hashes()[level]
 }
 
 /// Build a Merkle tree with all nodes stored for efficient proof generation

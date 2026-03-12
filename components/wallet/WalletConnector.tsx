@@ -28,6 +28,11 @@ export function WalletConnector() {
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  // Debug: log connectors
+  useEffect(() => {
+    console.log('[WalletConnector] Connectors:', connectors);
+  }, [connectors]);
+
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -52,6 +57,7 @@ export function WalletConnector() {
           <WalletSelectionModal
             connectors={connectors}
             onConnect={(connector) => {
+              console.log('[WalletConnector] Connecting with:', connector.id);
               connect({ connector });
               setShowModal(false);
             }}
@@ -115,6 +121,9 @@ function WalletSelectionModal({
   onConnect: (connector: any) => void;
   onClose: () => void;
 }) {
+  // Debug: log connectors in modal
+  console.log('[WalletSelectionModal] Rendering with connectors:', connectors.length);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-void/80 backdrop-blur-sm" onClick={onClose}>
       <div className="bg-panel border border-border rounded-2xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
@@ -122,30 +131,39 @@ function WalletSelectionModal({
           <h3 className="font-display font-bold text-xl text-parchment">Connect Wallet</h3>
           <button onClick={onClose} className="text-muted hover:text-parchment">✕</button>
         </div>
-        <div className="space-y-2">
-          {connectors.map((connector) => (
-            <button
-              key={connector.id}
-              className="w-full flex items-center gap-3 p-4 rounded-xl bg-surface hover:bg-amber/10 border border-border hover:border-amber transition-all"
-              onClick={() => onConnect(connector)}
-              disabled={!connector.available()}
-            >
-              {connector.icon && (
-                <img
-                  src={connector.icon.dark ?? connector.icon.light ?? connector.icon}
-                  alt={connector.name}
-                  width={32}
-                  height={32}
-                  className="rounded-lg"
-                />
-              )}
-              <span className="font-mono text-sm text-parchment">{connector.name}</span>
-              {!connector.available() && (
-                <span className="ml-auto text-xs text-muted">Install →</span>
-              )}
-            </button>
-          ))}
-        </div>
+        
+        {connectors.length === 0 ? (
+          <div className="text-center py-8">
+            <p className="text-muted mb-4">No wallets detected</p>
+            <p className="text-sm text-muted">
+              Please install Argent X or Braavos wallet extension.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {connectors.map((connector) => (
+              <button
+                key={connector.id}
+                className="w-full flex items-center gap-3 p-4 rounded-xl bg-surface hover:bg-amber/10 border border-border hover:border-amber transition-all"
+                onClick={() => onConnect(connector)}
+              >
+                {connector.icon && (
+                  <img
+                    src={connector.icon.dark ?? connector.icon.light ?? connector.icon}
+                    alt={connector.name}
+                    width={32}
+                    height={32}
+                    className="rounded-lg"
+                  />
+                )}
+                <span className="font-mono text-sm text-parchment">{connector.name}</span>
+                {!connector.available() && (
+                  <span className="ml-auto text-xs text-muted">Install →</span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
         <p className="text-xs text-muted mt-4 text-center">
           By connecting, you agree that PHANTOM never sees your private keys.
         </p>

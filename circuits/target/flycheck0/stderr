@@ -1,47 +1,17 @@
-   0.631147410s  INFO prepare_target{force=false package_id=phantom-prover v1.0.0 (/home/galmanus/Documents/phantom/circuits) target="bench_prover"}: cargo::core::compiler::fingerprint: fingerprint error for phantom-prover v1.0.0 (/home/galmanus/Documents/phantom/circuits)/Check { test: true }/TargetInner { kind: "bench", name: "bench_prover", tested: false, harness: false, ..: with_path("/home/galmanus/Documents/phantom/circuits/tests/bench/bench_prover.rs", Edition2024) }
-   0.631289423s  INFO prepare_target{force=false package_id=phantom-prover v1.0.0 (/home/galmanus/Documents/phantom/circuits) target="bench_prover"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/galmanus/Documents/phantom/circuits/target/debug/.fingerprint/phantom-prover-c7c70ea28156dde3/test-bench-bench_prover`
-
-Caused by:
-    No such file or directory (os error 2)
-
-Stack backtrace:
-   0: cargo_util::paths::read_bytes
-   1: cargo_util::paths::read
-   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
-   3: cargo::core::compiler::fingerprint::prepare_target
-   4: cargo::core::compiler::compile
-   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
-   6: cargo::ops::cargo_compile::compile_ws
-   7: cargo::ops::cargo_compile::compile_with_exec
-   8: cargo::ops::cargo_compile::compile
-   9: cargo::commands::check::exec
-  10: <cargo::cli::Exec>::exec
-  11: cargo::main
-  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
-  13: std::rt::lang_start::<()>::{closure#0}
-  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
-             at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/core/src/ops/function.rs:287:21
-  15: std::panicking::catch_unwind::do_call
-             at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/std/src/panicking.rs:590:40
-  16: std::panicking::catch_unwind
-             at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/std/src/panicking.rs:553:19
-  17: std::panic::catch_unwind
-             at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/std/src/panic.rs:359:14
-  18: std::rt::lang_start_internal::{{closure}}
-             at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/std/src/rt.rs:175:24
-  19: std::panicking::catch_unwind::do_call
-             at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/std/src/panicking.rs:590:40
-  20: std::panicking::catch_unwind
-             at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/std/src/panicking.rs:553:19
-  21: std::panic::catch_unwind
-             at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/std/src/panic.rs:359:14
-  22: std::rt::lang_start_internal
-             at /rustc/ded5c06cf21d2b93bffd5d884aa6e96934ee4234/library/std/src/rt.rs:171:5
-  23: main
-  24: __libc_start_call_main
-             at ./csu/../sysdeps/nptl/libc_start_call_main.h:58:16
-  25: __libc_start_main_impl
-             at ./csu/../csu/libc-start.c:392:3
-  26: <unknown>
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   0.387014686s  INFO prepare_target{force=false package_id=phantom-prover v1.0.0 (/home/galmanus/Documents/phantom/circuits) target="phantom_prover"}: cargo::core::compiler::fingerprint: stale: changed "/home/galmanus/Documents/phantom/circuits/src/crypto/merkle.rs"
+   0.387041899s  INFO prepare_target{force=false package_id=phantom-prover v1.0.0 (/home/galmanus/Documents/phantom/circuits) target="phantom_prover"}: cargo::core::compiler::fingerprint:           (vs) "/home/galmanus/Documents/phantom/circuits/target/debug/.fingerprint/phantom-prover-5287288308101dd5/dep-lib-phantom_prover"
+   0.387051334s  INFO prepare_target{force=false package_id=phantom-prover v1.0.0 (/home/galmanus/Documents/phantom/circuits) target="phantom_prover"}: cargo::core::compiler::fingerprint:                FileTime { seconds: 1773277179, nanos: 809261961 } < FileTime { seconds: 1773277196, nanos: 930403809 }
+   0.387307220s  INFO prepare_target{force=false package_id=phantom-prover v1.0.0 (/home/galmanus/Documents/phantom/circuits) target="phantom_prover"}: cargo::core::compiler::fingerprint: fingerprint dirty for phantom-prover v1.0.0 (/home/galmanus/Documents/phantom/circuits)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("phantom_prover", ["cdylib", "rlib"], "/home/galmanus/Documents/phantom/circuits/src/lib.rs", Edition2024) }
+   0.387338100s  INFO prepare_target{force=false package_id=phantom-prover v1.0.0 (/home/galmanus/Documents/phantom/circuits) target="phantom_prover"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleItem(ChangedFile { reference: "/home/galmanus/Documents/phantom/circuits/target/debug/.fingerprint/phantom-prover-5287288308101dd5/dep-lib-phantom_prover", reference_mtime: FileTime { seconds: 1773277179, nanos: 809261961 }, stale: "/home/galmanus/Documents/phantom/circuits/src/crypto/merkle.rs", stale_mtime: FileTime { seconds: 1773277196, nanos: 930403809 } }))
+   0.411764300s  INFO prepare_target{force=false package_id=phantom-prover v1.0.0 (/home/galmanus/Documents/phantom/circuits) target="phantom_prover"}: cargo::core::compiler::fingerprint: stale: changed "/home/galmanus/Documents/phantom/circuits/src/crypto/merkle.rs"
+   0.411789945s  INFO prepare_target{force=false package_id=phantom-prover v1.0.0 (/home/galmanus/Documents/phantom/circuits) target="phantom_prover"}: cargo::core::compiler::fingerprint:           (vs) "/home/galmanus/Documents/phantom/circuits/target/debug/.fingerprint/phantom-prover-a1d29435e2901de9/dep-test-lib-phantom_prover"
+   0.411799686s  INFO prepare_target{force=false package_id=phantom-prover v1.0.0 (/home/galmanus/Documents/phantom/circuits) target="phantom_prover"}: cargo::core::compiler::fingerprint:                FileTime { seconds: 1773277179, nanos: 810261969 } < FileTime { seconds: 1773277196, nanos: 930403809 }
+   0.411933312s  INFO prepare_target{force=false package_id=phantom-prover v1.0.0 (/home/galmanus/Documents/phantom/circuits) target="phantom_prover"}: cargo::core::compiler::fingerprint: fingerprint dirty for phantom-prover v1.0.0 (/home/galmanus/Documents/phantom/circuits)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("phantom_prover", ["cdylib", "rlib"], "/home/galmanus/Documents/phantom/circuits/src/lib.rs", Edition2024) }
+   0.411961493s  INFO prepare_target{force=false package_id=phantom-prover v1.0.0 (/home/galmanus/Documents/phantom/circuits) target="phantom_prover"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleItem(ChangedFile { reference: "/home/galmanus/Documents/phantom/circuits/target/debug/.fingerprint/phantom-prover-a1d29435e2901de9/dep-test-lib-phantom_prover", reference_mtime: FileTime { seconds: 1773277179, nanos: 810261969 }, stale: "/home/galmanus/Documents/phantom/circuits/src/crypto/merkle.rs", stale_mtime: FileTime { seconds: 1773277196, nanos: 930403809 } }))
+   0.420086171s  INFO prepare_target{force=false package_id=phantom-prover v1.0.0 (/home/galmanus/Documents/phantom/circuits) target="bench_prover"}: cargo::core::compiler::fingerprint: fingerprint dirty for phantom-prover v1.0.0 (/home/galmanus/Documents/phantom/circuits)/Check { test: true }/TargetInner { kind: "bench", name: "bench_prover", tested: false, harness: false, ..: with_path("/home/galmanus/Documents/phantom/circuits/tests/bench/bench_prover.rs", Edition2024) }
+   0.420127512s  INFO prepare_target{force=false package_id=phantom-prover v1.0.0 (/home/galmanus/Documents/phantom/circuits) target="bench_prover"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleDepFingerprint { name: "phantom_prover" })
     Checking phantom-prover v1.0.0 (/home/galmanus/Documents/phantom/circuits)
-error: could not compile `phantom-prover` (bench "bench_prover") due to 8 previous errors
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.15s

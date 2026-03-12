@@ -8,6 +8,7 @@
  * - Encryption key is derived from user password via PBKDF2
  */
 import { openDB } from 'idb';
+import { NoteSelectionError } from '../types';
 const DB_NAME = 'phantom-notes-v1';
 const DB_VERSION = 1;
 const NOTES_STORE = 'notes';
@@ -136,16 +137,6 @@ export class NoteStore {
             }
         }
         return notes;
-    }
-    /**
-     * Mark a note as spent
-     */
-    async markNoteSpent(commitment) {
-        const note = await this.getNote(commitment);
-        if (note) {
-            note.spent = true;
-            await this.saveNote(note);
-        }
     }
     /**
      * Delete a note
@@ -317,6 +308,136 @@ export class NoteStore {
             bytes[i] = binary.charCodeAt(i);
         }
         return bytes.buffer;
+    }
+    // ═════════════════════════════════════════════════════════════════════════════
+    // OBSTACLE 1 SOLUTION: Concurrent Transaction Handling
+    // ═════════════════════════════════════════════════════════════════════════════
+    /**
+     * Get notes by status
+     *
+     * OBSTACLE 1: Used by SDK to select only confirmed notes for new proofs,
+     * preventing concurrent spending of the same UTXO.
+     */
+    async getNotesByStatus(assetId, status) {
+        const allNotes = await this.getAllNotes();
+        return allNotes.filter(note => note.assetId === assetId && note.status === status);
+    }
+    /**
+     * Count notes by status
+     */
+    async countByStatus(assetId, status) {
+        const notes = await this.getNotesByStatus(assetId, status);
+        return notes.length;
+    }
+    /**
+     * Select notes for a new proof - ONLY returns confirmed notes
+     *
+     * OBSTACLE 1 CORE SOLUTION:
+     * This method applies an automatic offset to skip pending notes,
+     * preventing the same UTXO from being selected in concurrent proofs.
+     *
+     * This is the exact mechanism described in Aztec's forum post:
+     * "offset-based note selection" to solve UTXO concurrency.
+     */
+    async selectNotesForProof(assetId, amount, strategy = 'oldest_first') {
+        // ONLY return confirmed notes - skip all pending notes
+        const confirmedNotes = await this.getNotesByStatus(assetId, 'confirmed');
+        if (confirmedNotes.length === 0) {
+            const pendingCount = await this.countByStatus(assetId, 'pending');
+            throw new NoteSelectionError(`No confirmed notes available. ` +
+                `If you have ${pendingCount} pending transaction(s), ` +
+                `wait for confirmation before submitting another.`);
+        }
+        // Coin selection: select minimum notes that cover the amount
+        const selected = this.coinSelect(confirmedNotes, amount, strategy);
+        if (!selected) {
+            const total = confirmedNotes.reduce((acc, n) => acc + n.amount, 0n);
+            const pending = await this.countByStatus(assetId, 'pending');
+            throw new NoteSelectionError(`Insufficient confirmed balance. Available: ${total}, Required: ${amount}. ` +
+                `Note: ${pending} note(s) are pending confirmation.`);
+        }
+        // Optimistically mark selected notes as 'pending' IMMEDIATELY
+        // This prevents the same notes from being selected by concurrent calls
+        await this.markNotesStatus(selected.map(n => n.commitment), 'pending');
+        return selected;
+    }
+    /**
+     * Mark notes with a specific status
+     */
+    async markNotesStatus(commitments, status) {
+        for (const commitment of commitments) {
+            const note = await this.getNote(commitment);
+            if (note) {
+                note.status = status;
+                await this.saveNote(note);
+            }
+        }
+    }
+    /**
+     * Update note status
+     */
+    async updateNoteStatus(commitment, status) {
+        const note = await this.getNote(commitment);
+        if (note) {
+            note.status = status;
+            await this.saveNote(note);
+        }
+    }
+    /**
+     * Update leaf index
+     */
+    async updateLeafIndex(commitment, leafIndex) {
+        const note = await this.getNote(commitment);
+        if (note) {
+            note.leafIndex = leafIndex;
+            await this.saveNote(note);
+        }
+    }
+    /**
+     * Restore notes to confirmed status after failed transaction
+     *
+     * OBSTACLE 1: If a transaction reverts, we restore the notes
+     * so they can be used in future transactions.
+     */
+    async restoreNotesAfterFailure(commitments) {
+        await this.markNotesStatus(commitments, 'confirmed');
+    }
+    /**
+     * Confirm note after seeing it in a block
+     *
+     * Called when a Shield event is detected on-chain
+     */
+    async confirmNote(commitment, leafIndex) {
+        await this.updateNoteStatus(commitment, 'confirmed');
+        await this.updateLeafIndex(commitment, leafIndex);
+    }
+    /**
+     * Mark note as spent
+     */
+    async markNoteSpent(commitment) {
+        await this.updateNoteStatus(commitment, 'spent');
+    }
+    /**
+     * Standard coin selection (greedy algorithm)
+     *
+     * Minimizes the number of notes used to cover the target amount.
+     */
+    coinSelect(notes, target, strategy) {
+        const sorted = [...notes].sort((a, b) => {
+            if (strategy === 'oldest_first') {
+                return Number(a.createdAt - b.createdAt);
+            }
+            return Number(a.amount - b.amount);
+        });
+        const selected = [];
+        let accumulated = 0n;
+        for (const note of sorted) {
+            selected.push(note);
+            accumulated += note.amount;
+            if (accumulated >= target)
+                return selected;
+        }
+        return null; // insufficient funds
     }
 }
 //# sourceMappingURL=NoteStore.js.map

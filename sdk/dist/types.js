@@ -40,4 +40,11 @@ export class StorageError extends PhantomError {
         this.name = 'StorageError';
     }
 }
+// OBSTACLE 1: Note selection error for concurrency handling
+export class NoteSelectionError extends PhantomError {
+    constructor(message, details) {
+        super(message, 'NOTE_SELECTION_FAILED', details);
+        this.name = 'NoteSelectionError';
+    }
+}
 //# sourceMappingURL=types.js.map
