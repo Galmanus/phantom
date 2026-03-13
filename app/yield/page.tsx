@@ -29,7 +29,7 @@ const RISK_COLORS: Record<string, string> = {
 
 export default function YieldPage() {
   const { account, address } = useAccount()
-  const { isReady, shield, isLoading: sdkLoading, error: sdkError } = usePhantomSDK()
+  const { isReady, shield, sdk, isLoading: sdkLoading, error: sdkError } = usePhantomSDK()
   const { setTransactionState } = useWalletStore()
 
   // Strategies
@@ -82,18 +82,19 @@ export default function YieldPage() {
   // ─── Carregar posições do NoteStore ─────────────────────────────────────────
 
   const loadPositions = useCallback(async () => {
-    if (!isReady) return
+    if (!isReady || !sdk) return
     setIsLoadingPositions(true)
     try {
-      const { usePhantomSDK: useSDK } = await import('@/hooks/usePhantomSDKReal')
-      // Cannot access SDK directly here without the hook
-      // For now, positions will be loaded via the SDK when available
+      // Load active yield positions from NoteStore via SDK
+      const activePositions = await sdk.getActiveYieldPositions()
+      setPositions(activePositions)
     } catch (err) {
       console.error('[Yield] Failed to load positions:', err)
+      // Keep existing positions on error
     } finally {
       setIsLoadingPositions(false)
     }
-  }, [isReady])
+  }, [isReady, sdk])
 
   useEffect(() => {
     if (isReady) loadPositions()
