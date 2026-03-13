@@ -1,334 +1,305 @@
 'use client'
-import { useState } from 'react'
+
+import { useState, useCallback } from 'react'
 import { useAccount } from '@starknet-react/core'
-import { PhantomKeyManager } from '@/sdk/src/key-derivation'
+import type { Account } from 'starknet'
+import { useWalletStore } from '@/store/walletStore'
+import { parseWalletError } from '@/lib/wallet-errors'
+import { WalletConnector } from '@/components/wallet/WalletConnector'
 
-type DisclosureScope = 'full' | 'range' | 'existence'
+type DisclosureScope = 'amount_only' | 'kyc_status' | 'sanctions_cleared' | 'full_audit'
 
-interface ViewingKeyConfig {
+interface DisclosureOption {
   scope: DisclosureScope
-  expiresAt: number | null
-  recipientLabel: string
-  includeYield: boolean
+  label: string
+  description: string
+  icon: string
 }
 
+const DISCLOSURE_OPTIONS: DisclosureOption[] = [
+  {
+    scope: 'amount_only',
+    label: 'Amount Only',
+    description: 'Prove total position is below reporting threshold without revealing exact amount',
+    icon: '≤',
+  },
+  {
+    scope: 'kyc_status',
+    label: 'KYC Status',
+    description: 'Prove identity verification was completed without revealing personal data',
+    icon: '✓',
+  },
+  {
+    scope: 'sanctions_cleared',
+    label: 'Sanctions Cleared',
+    description: 'Prove no sanctioned addresses are involved in your transactions',
+    icon: '🛡',
+  },
+  {
+    scope: 'full_audit',
+    label: 'Full Audit Key',
+    description: 'Provide regulator with complete view of your shielded positions via IVK',
+    icon: '🔑',
+  },
+]
+
 export default function CompliancePage() {
-  const { address } = useAccount()
-  const [config, setConfig] = useState<ViewingKeyConfig>({
-    scope: 'full',
-    expiresAt: null,
-    recipientLabel: '',
-    includeYield: false,
-  })
-  const [generatedKey, setGeneratedKey] = useState<string | null>(null)
-  const [isCopied, setIsCopied] = useState(false)
-  const [isGenerating, setIsGenerating] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { account: accountInterface, address } = useAccount()
+  const { incomingViewingKey, setPhantomKeys, account: starknetAccount } = useWalletStore()
 
-  const handleGenerate = async () => {
-    if (!address) return
-    setIsGenerating(true)
-    setError(null)
+  // Use the account from walletStore which has the proper starknet.js Account type
+  const account = starknetAccount as Account | null
+
+  const [selectedScope, setSelectedScope] = useState<DisclosureScope>('amount_only')
+  const [isDerivingKey, setIsDerivingKey] = useState(false)
+  const [derivationError, setDerivationError] = useState<string | null>(null)
+  const [copiedKey, setCopiedKey] = useState(false)
+  const [copiedProof, setCopiedProof] = useState(false)
+
+  // IVK já foi derivada pelo useWalletSync no mount — mas o usuário pode re-derivar
+  const hasKey = !!incomingViewingKey
+
+  // ─── Derivar IVK ────────────────────────────────────────────────────────────
+
+  const deriveViewingKey = useCallback(async () => {
+    if (!account) return
+
+    setIsDerivingKey(true)
+    setDerivationError(null)
+
     try {
-      const keyManager = await PhantomKeyManager.fromWallet(address)
-      // Format IVK as a compact viewing key string
-      const key = `phantom_vk_${config.scope}_${keyManager.ivkHex}`
-      setGeneratedKey(key)
-    } catch (err) {
-      console.error('Key generation failed:', err)
-      setError(err instanceof Error ? err.message : 'Key generation failed')
+      // Import dinâmico para evitar SSR
+      const { PhantomKeyManager } = await import('@/sdk/src/key-derivation')
+      const keyManager = await PhantomKeyManager.fromWallet(account)
+
+      // Persistir no walletStore
+      setPhantomKeys(keyManager.ivkHex, null)
+    } catch (error) {
+      setDerivationError(parseWalletError(error))
     } finally {
-      setIsGenerating(false)
+      setIsDerivingKey(false)
     }
+  }, [account, setPhantomKeys])
+
+  // ─── Copy helpers ────────────────────────────────────────────────────────────
+
+  const copyToClipboard = useCallback(async (text: string, setter: (v: boolean) => void) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setter(true)
+      setTimeout(() => setter(false), 2000)
+    } catch {
+      // fallback
+      const el = document.createElement('textarea')
+      el.value = text
+      document.body.appendChild(el)
+      el.select()
+      document.execCommand('copy')
+      document.body.removeChild(el)
+      setter(true)
+      setTimeout(() => setter(false), 2000)
+    }
+  }, [])
+
+  // ─── Gerar prova de compliance ────────────────────────────────────────────────
+  // PLACEHOLDER: Waiting for Starknet 0.14.2 native Stwo syscall
+  // Por enquanto exibe o IVK formatado como "prova" para escopo full_audit
+
+  const getProofPayload = (): string => {
+    if (!incomingViewingKey || !address) return ''
+    return JSON.stringify({
+      scope: selectedScope,
+      ivk: selectedScope === 'full_audit' ? incomingViewingKey : '[SCOPED_PROOF_PLACEHOLDER]',
+      address,
+      timestamp: Date.now(),
+      protocol: 'PHANTOM v1',
+      network: process.env.NEXT_PUBLIC_STARKNET_NETWORK || 'sepolia',
+      note: 'PLACEHOLDER: Real ZK compliance proof pending Starknet 0.14.2',
+    }, null, 2)
   }
 
-  const handleCopy = () => {
-    if (!generatedKey) return
-    navigator.clipboard.writeText(generatedKey)
-    setIsCopied(true)
-    setTimeout(() => setIsCopied(false), 2000)
-  }
+  const truncateKey = (key: string): string =>
+    key.slice(0, 10) + '...' + key.slice(-8)
+
+  // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-void px-8 py-12">
+    <div className="min-h-screen bg-void pt-24 pb-16 px-4">
       <div className="max-w-2xl mx-auto">
 
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-3">
-            <svg className="w-6 h-6 text-amber" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
-                    d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-            </svg>
-            <h1 className="text-3xl font-display font-bold text-text-primary">
-              Compliance & Disclosure
-            </h1>
-          </div>
-          <p className="text-text-primary/60 leading-relaxed">
-            Generate a viewing key to prove your transaction history to
-            regulators, auditors, or exchanges — without revealing your
-            full wallet or future activity.
-          </p>
-        </div>
-
-        {/* How it works */}
-        <div className="bg-panel border border-amber/10 rounded-xl p-5 mb-8">
-          <p className="text-xs font-mono text-amber uppercase tracking-wider mb-4">
-            How viewing keys work
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {[
-              {
-                step: '01',
-                title: 'You generate',
-                desc: 'A cryptographic key derived from your wallet. Never exposing your private key.',
-              },
-              {
-                step: '02',
-                title: 'You share',
-                desc: 'Only with who you choose. The key is scoped — full history, range, or existence only.',
-              },
-              {
-                step: '03',
-                title: 'They verify',
-                desc: 'The recipient can verify your transactions on-chain. Cannot access future activity.',
-              },
-            ].map(item => (
-              <div key={item.step}>
-                <div className="text-2xl font-mono text-amber/30 font-bold mb-2">
-                  {item.step}
-                </div>
-                <div className="font-medium text-text-primary mb-1">{item.title}</div>
-                <div className="text-xs text-text-primary/50">{item.desc}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Configuration */}
-        <div className="bg-panel border border-amber/20 rounded-2xl p-6 mb-6">
-          <p className="text-sm font-medium text-text-primary mb-5">
-            Configure your viewing key
-          </p>
-
-          {/* Scope selector */}
-          <div className="mb-5">
-            <label className="text-xs text-text-primary/50 mb-3 block">
-              Disclosure scope
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              {([
-                {
-                  value: 'full' as DisclosureScope,
-                  label: 'Full history',
-                  desc: 'All amounts and timestamps',
-                },
-                {
-                  value: 'range' as DisclosureScope,
-                  label: 'Range proof',
-                  desc: 'Prove amount within range without exact value',
-                },
-                {
-                  value: 'existence' as DisclosureScope,
-                  label: 'Existence only',
-                  desc: 'Prove transactions exist, no amounts',
-                },
-              ] as const).map(option => (
-                <button
-                  key={option.value}
-                  onClick={() => setConfig(c => ({ ...c, scope: option.value }))}
-                  className={`
-                    text-left p-3 rounded-xl border text-xs transition-all
-                    ${config.scope === option.value
-                      ? 'border-amber bg-amber/10'
-                      : 'border-amber/20 hover:border-amber/40'
-                    }
-                  `}
-                >
-                  <div className="font-medium text-text-primary mb-1">{option.label}</div>
-                  <div className="text-text-primary/50">{option.desc}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Recipient label */}
-          <div className="mb-5">
-            <label className="text-xs text-text-primary/50 mb-2 block">
-              Recipient (optional, for your records)
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. Chainalysis, IRS, Binance compliance"
-              value={config.recipientLabel}
-              onChange={e => setConfig(c => ({ ...c, recipientLabel: e.target.value }))}
-              className="w-full bg-void border border-amber/20 rounded-xl px-4 py-3
-                         text-text-primary placeholder-text-primary/20 text-sm
-                         focus:outline-none focus:border-amber/60"
-            />
-          </div>
-
-          {/* Include yield toggle */}
-          <div className="mb-5 flex items-center justify-between">
-            <div>
-              <div className="text-sm text-text-primary">Include yield history</div>
-              <div className="text-xs text-text-primary/50">
-                Show earnings from yield strategies
-              </div>
-            </div>
-            <button
-              onClick={() => setConfig(c => ({ ...c, includeYield: !c.includeYield }))}
-              className={`
-                w-11 h-6 rounded-full transition-colors relative
-                ${config.includeYield ? 'bg-amber' : 'bg-amber/20'}
-              `}
-            >
-              <div className={`
-                absolute top-1 w-4 h-4 rounded-full bg-void transition-transform
-                ${config.includeYield ? 'translate-x-6' : 'translate-x-1'}
-              `} />
-            </button>
-          </div>
-
-          {/* Warning */}
-          <div className="flex items-start gap-2 bg-amber/5 border border-amber/20
-                          rounded-xl p-3 mb-5">
-            <svg className="w-4 h-4 text-amber shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-            <p className="text-xs text-text-primary/60">
-              This viewing key is permanent for past activity. Anyone with this key
-              can verify your historical transactions. Share only with trusted parties.
-            </p>
-          </div>
-
-          {/* Generate button */}
-          <button
-            onClick={handleGenerate}
-            disabled={!address || isGenerating}
-            className="w-full bg-amber text-void font-bold py-4 rounded-xl
-                       hover:bg-amber/90 transition-colors disabled:opacity-40"
-          >
-            {isGenerating ? 'Generating...' : 'Generate Viewing Key'}
-          </button>
-        </div>
-
-        {/* Generated key display */}
-        {generatedKey && (
-          <div className="bg-panel border border-zk-green/30 rounded-2xl p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <svg className="w-5 h-5 text-zk-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <div className="w-10 h-10 rounded-xl bg-amber/10 border border-amber/30
+                            flex items-center justify-center">
+              <svg className="w-5 h-5 text-amber" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
               </svg>
-              <span className="font-medium text-zk-green">Viewing key generated</span>
             </div>
+            <div>
+              <h1 className="text-2xl font-display font-bold text-parchment">Compliance</h1>
+              <p className="text-sm text-secondary">Selective disclosure via encrypted viewing keys</p>
+            </div>
+          </div>
+          <p className="text-sm text-muted leading-relaxed">
+            Generate cryptographic proofs to satisfy regulatory requirements without
+            revealing your full transaction history. Privacy by default, compliance when needed.
+          </p>
+        </div>
 
-            {/* Key display */}
-            <div className="bg-void rounded-xl p-4 font-mono text-xs
-                            text-text-primary/70 break-all mb-4 leading-relaxed">
-              {generatedKey}
-            </div>
-
-            {/* Actions */}
-            <div className="flex gap-3">
-              <button
-                onClick={handleCopy}
-                className="flex-1 flex items-center justify-center gap-2
-                           border border-amber/30 text-amber py-3 rounded-xl
-                           hover:bg-amber/10 transition-colors text-sm font-medium"
-              >
-                {isCopied
-                  ? (
-                    <>
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                      Copied
-                    </>
-                  )
-                  : (
-                    <>
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                      </svg>
-                      Copy key
-                    </>
-                  )
-                }
-              </button>
-              <button
-                onClick={() => {
-                  const blob = new Blob([generatedKey], { type: 'text/plain' })
-                  const url = URL.createObjectURL(blob)
-                  const a = document.createElement('a')
-                  a.href = url
-                  a.download = `phantom-viewing-key-${Date.now()}.txt`
-                  a.click()
-                }}
-                className="flex items-center justify-center gap-2
-                           border border-amber/30 text-amber py-3 px-4
-                           rounded-xl hover:bg-amber/10 transition-colors text-sm"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-              </button>
-            </div>
-
-            {/* Scope summary */}
-            <div className="mt-4 text-xs text-text-primary/40">
-              Scope: {config.scope} •
-              {config.includeYield ? ' includes yield' : ' excludes yield'} •
-              {config.recipientLabel ? ` for ${config.recipientLabel}` : ' no recipient set'}
-            </div>
+        {/* Wallet Gate */}
+        {!account && (
+          <div className="bg-panel border border-subtle rounded-2xl p-8 text-center mb-6">
+            <p className="text-secondary mb-4">Connect your wallet to access compliance tools</p>
+            <WalletConnector />
           </div>
         )}
 
+        {account && (
+          <div className="space-y-6">
+
+            {/* IVK Section */}
+            <div className="bg-panel border border-subtle rounded-2xl p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-sm font-mono uppercase tracking-wider text-parchment">
+                    Incoming Viewing Key
+                  </h2>
+                  <p className="text-xs text-muted mt-1">
+                    Derived from your wallet signature via PBKDF2-600k
+                  </p>
+                </div>
+                {hasKey && (
+                  <span className="flex items-center gap-1.5 text-xs font-mono text-zk-green">
+                    <span className="w-1.5 h-1.5 rounded-full bg-zk-green" />
+                    Active
+                  </span>
+                )}
+              </div>
+
+              {hasKey ? (
+                <div className="space-y-3">
+                  {/* Key display */}
+                  <div className="flex items-center gap-3 bg-void/50 border border-subtle
+                                   rounded-xl p-3 font-mono text-sm">
+                    <span className="text-parchment truncate flex-1">
+                      {truncateKey(incomingViewingKey!)}
+                    </span>
+                    <button
+                      onClick={() => copyToClipboard(incomingViewingKey!, setCopiedKey)}
+                      className="shrink-0 text-xs text-secondary hover:text-amber transition-colors"
+                    >
+                      {copiedKey ? '✓ Copied' : 'Copy'}
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted">
+                    Share this key only with authorized regulators. It allows read-only access to your shielded positions.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-sm text-secondary">
+                    Your viewing key has not been derived yet. Click below to sign a message with your wallet and derive your PHANTOM privacy keys.
+                  </p>
+                  <button
+                    onClick={deriveViewingKey}
+                    disabled={isDerivingKey}
+                    className="w-full py-3 rounded-xl bg-amber text-void font-mono text-sm
+                               uppercase tracking-wider font-bold
+                               hover:bg-amber/90 transition-colors
+                               disabled:opacity-50 disabled:cursor-wait"
+                  >
+                    {isDerivingKey ? 'Deriving Keys...' : 'Derive Viewing Key'}
+                  </button>
+                  {isDerivingKey && (
+                    <p className="text-xs text-amber/70 font-mono text-center">
+                      Running PBKDF2 with 600,000 iterations — this takes ~3 seconds
+                    </p>
+                  )}
+                  {derivationError && (
+                    <div className="bg-error/10 border border-error/30 rounded-xl p-3">
+                      <p className="text-xs text-error font-mono">{derivationError}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Disclosure Scope */}
+            {hasKey && (
+              <div className="bg-panel border border-subtle rounded-2xl p-6">
+                <h2 className="text-sm font-mono uppercase tracking-wider text-parchment mb-4">
+                  Disclosure Scope
+                </h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {DISCLOSURE_OPTIONS.map(option => (
+                    <button
+                      key={option.scope}
+                      onClick={() => setSelectedScope(option.scope)}
+                      className={`text-left p-4 rounded-xl border transition-all ${
+                        selectedScope === option.scope
+                          ? 'border-amber/50 bg-amber/5'
+                          : 'border-subtle hover:border-subtle-2 bg-void/30'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <span className="text-lg shrink-0">{option.icon}</span>
+                        <div>
+                          <p className={`text-sm font-medium mb-1 ${
+                            selectedScope === option.scope ? 'text-amber' : 'text-parchment'
+                          }`}>
+                            {option.label}
+                          </p>
+                          <p className="text-xs text-muted leading-relaxed">{option.description}</p>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Proof payload */}
+                <div className="mt-6">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-mono text-secondary uppercase tracking-wider">
+                      Compliance Proof Payload
+                    </span>
+                    <button
+                      onClick={() => copyToClipboard(getProofPayload(), setCopiedProof)}
+                      className="text-xs font-mono text-secondary hover:text-amber transition-colors"
+                    >
+                      {copiedProof ? '✓ Copied' : 'Copy JSON'}
+                    </button>
+                  </div>
+                  <pre className="bg-void/50 border border-subtle rounded-xl p-4
+                                   text-xs font-mono text-parchment/70 overflow-auto
+                                   max-h-48 whitespace-pre-wrap break-all">
+                    {getProofPayload()}
+                  </pre>
+                  <p className="text-xs text-amber/60 mt-2 font-mono">
+                    ⚠ PLACEHOLDER — Real ZK compliance proofs pending Starknet 0.14.2 Stwo verifier
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Architecture note */}
+            <div className="bg-panel border border-amber/10 rounded-2xl p-6">
+              <h3 className="text-xs font-mono uppercase tracking-wider text-amber mb-3">
+                How it works
+              </h3>
+              <div className="space-y-2 text-sm text-muted">
+                <p>1. Your wallet signs a SNIP-12 typed message (deterministic)</p>
+                <p>2. PBKDF2 with 600,000 iterations derives IVK + Spending Key</p>
+                <p>3. IVK allows read-only access to your shielded notes</p>
+                <p>4. Spending Key is never shared — only you can spend funds</p>
+                <p>5. ZK proofs let you prove properties without revealing data</p>
+              </div>
+            </div>
+
+          </div>
+        )}
       </div>
     </div>
   )
-}
-
-// Real implementation using HKDF to derive scoped viewing keys
-// PHANTOM — Real implementation (no mocks)
-async function generateViewingKey(config: ViewingKeyConfig, address: string): Promise<string> {
-  // Use address + config to derive a deterministic viewing key
-  // This follows the pattern: HKDF(IVK_or_master, scope_info)
-  
-  // Build scope info from config
-  const scopeInfo = new TextEncoder().encode(
-    `${config.scope}:${config.recipientLabel}:${config.includeYield ? '1' : '0'}:${address}`
-  )
-
-  // Derive key material from address (as a stand-in for IVK until full integration)
-  // In production, this should use the actual IVK from PhantomKeyManager
-  const addressBytes = new TextEncoder().encode(address.toLowerCase())
-  
-  // Use HKDF via Web Crypto API
-  const baseKey = await crypto.subtle.importKey(
-    'raw',
-    addressBytes,
-    { name: 'HKDF' },
-    false,
-    ['deriveBits']
-  )
-  
-  const derivedBits = await crypto.subtle.deriveBits(
-    {
-      name: 'HKDF',
-      hash: 'SHA-256',
-      salt: new TextEncoder().encode('PHANTOM_VK_V1'),
-      info: scopeInfo,
-    },
-    baseKey,
-    256 // 256 bits
-  )
-  
-  const vkBytes = new Uint8Array(derivedBits)
-  const vkHex = Array.from(vkBytes).map(b => b.toString(16).padStart(2, '0')).join('')
-  
-  // Include expiration if set
-  const expiryStr = config.expiresAt ? `_exp${config.expiresAt}` : ''
-  
-  return `phantom_vk_${config.scope}${expiryStr}_${vkHex}`
 }

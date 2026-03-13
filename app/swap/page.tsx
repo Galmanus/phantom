@@ -1,268 +1,374 @@
 'use client'
-import { useState } from 'react'
+
+import { useState, useEffect, useCallback } from 'react'
 import { useAccount } from '@starknet-react/core'
-import { useStrkBTC } from '@/hooks/useStrkBTC'
+import { CallData } from 'starknet'
+import { fetchQuote, buildSwapCalldata, type AVNUQuote } from '@/sdk/src/integrations/avnu'
+import { useWalletStore } from '@/store/walletStore'
+import { parseWalletError } from '@/lib/wallet-errors'
+import { WalletConnector } from '@/components/wallet/WalletConnector'
 
 // Supported input assets
-const INPUT_ASSETS = [
-  { id: 'wbtc',    label: 'wBTC',    decimals: 8 },
-  { id: 'tbtc',    label: 'tBTC',    decimals: 18 },
-  { id: 'lbtc',    label: 'LBTC',    decimals: 8 },
-  { id: 'solvbtc', label: 'SolvBTC', decimals: 18 },
-]
+const BTC_ASSETS = [
+  { symbol: 'wBTC', label: 'Wrapped Bitcoin', addressKey: 'wBTC', decimals: 8 },
+  { symbol: 'tBTC', label: 'tBTC',            addressKey: 'tBTC', decimals: 18 },
+  { symbol: 'LBTC', label: 'Liquid Bitcoin',  addressKey: 'LBTC', decimals: 8 },
+  { symbol: 'SolvBTC', label: 'Solv Bitcoin', addressKey: 'SolvBTC', decimals: 18 },
+] as const
+
+type BTCAssetKey = typeof BTC_ASSETS[number]['addressKey']
 
 export default function SwapPage() {
   const { account, address } = useAccount()
-  const { balance } = useStrkBTC()
-  const [inputAsset, setInputAsset] = useState(INPUT_ASSETS[0])
+  const { setTransactionState, setLastTransactionHash, transactionState } = useWalletStore()
+
+  // Form state
+  const [inputAsset, setInputAsset] = useState<BTCAssetKey>('wBTC')
   const [inputAmount, setInputAmount] = useState('')
-  const [isSwapping, setIsSwapping] = useState(false)
+  const [slippage, setSlippage] = useState(50) // 0.5% padrão
+
+  // Quote state
+  const [quote, setQuote] = useState<AVNUQuote | null>(null)
+  const [isFetchingQuote, setIsFetchingQuote] = useState(false)
+  const [quoteError, setQuoteError] = useState<string | null>(null)
+
+  // Transaction state
+  const [txError, setTxError] = useState<string | null>(null)
   const [txHash, setTxHash] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
 
-  // Estimated output (1:1 ratio minus small fee)
-  const estimatedOutput = inputAmount
-    ? (parseFloat(inputAmount) * 0.9995).toFixed(8)
-    : '0.00000000'
+  // ─── Helpers ──────────────────────────────────────────────────────────────
 
-  const handleSwap = async () => {
-    if (!account || !address || !inputAmount || parseFloat(inputAmount) <= 0) return
-    setIsSwapping(true)
-    setError(null)
-    setTxHash(null)
+  const getTokenAddress = useCallback((key: BTCAssetKey): string => {
+    const addresses: Record<BTCAssetKey, string> = {
+      wBTC: process.env.NEXT_PUBLIC_TOKEN_WBTC || '',
+      tBTC: process.env.NEXT_PUBLIC_TOKEN_TBTC || '',
+      LBTC: process.env.NEXT_PUBLIC_TOKEN_LBTC || '',
+      SolvBTC: process.env.NEXT_PUBLIC_TOKEN_SOLVBTC || '',
+    }
+    return addresses[key]
+  }, [])
+
+  const strkBtcAddress = process.env.NEXT_PUBLIC_STRKBTC_ADDRESS || ''
+  const selectedAsset = BTC_ASSETS.find(a => a.addressKey === inputAsset)!
+
+  // Converter amount string para bigint (respeitando decimais do asset)
+  const parseInputAmount = useCallback((): bigint | null => {
+    const parsed = parseFloat(inputAmount)
+    if (isNaN(parsed) || parsed <= 0) return null
+    return BigInt(Math.floor(parsed * 10 ** selectedAsset.decimals))
+  }, [inputAmount, selectedAsset])
+
+  // ─── Fetch quote com debounce ───────────────────────────────────────────
+
+  const fetchSwapQuote = useCallback(async () => {
+    const amountBigInt = parseInputAmount()
+    if (!amountBigInt || !address) {
+      setQuote(null)
+      return
+    }
+
+    const sellAddress = getTokenAddress(inputAsset)
+    if (!sellAddress) {
+      setQuoteError(`Token address not configured for ${inputAsset}. Set NEXT_PUBLIC_TOKEN_${inputAsset.toUpperCase()} in .env.local`)
+      return
+    }
+    if (!strkBtcAddress) {
+      setQuoteError('strkBTC address not configured. Set NEXT_PUBLIC_STRKBTC_ADDRESS in .env.local')
+      return
+    }
+
+    setIsFetchingQuote(true)
+    setQuoteError(null)
 
     try {
-      const sellAmount = BigInt(
-        Math.floor(parseFloat(inputAmount) * 10 ** inputAsset.decimals)
-      )
-      const strkBtcAddress = process.env.NEXT_PUBLIC_STRKBTC_ADDRESS
-
-      if (!strkBtcAddress) {
-        throw new Error('STRKBTC address not configured')
-      }
-
-      // 1. Fetch quote from AVNU
-      const quoteRes = await fetch(
-        `https://starknet.api.avnu.fi/swap/v2/quotes?` +
-        `sellTokenAddress=${inputAsset.address}&` +
-        `buyTokenAddress=${strkBtcAddress}&` +
-        `sellAmount=0x${sellAmount.toString(16)}&` +
-        `takerAddress=${address}`
-      )
-
-      if (!quoteRes.ok) {
-        const err = await quoteRes.text()
-        throw new Error(`AVNU quote failed: ${err}`)
-      }
-
-      const quoteData = await quoteRes.json()
-      const quotes = quoteData.quotes ?? quoteData
-
-      if (!Array.isArray(quotes) || quotes.length === 0) {
-        throw new Error('No swap route available for this pair')
-      }
-
-      const bestQuote = quotes[0]
-
-      // 2. Build swap calldata
-      const buildRes = await fetch('https://starknet.api.avnu.fi/swap/v2/build', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          quoteId: bestQuote.quoteId,
-          takerAddress: address,
-          slippage: 0.005, // 0.5%
-        }),
+      const q = await fetchQuote({
+        sellTokenAddress: sellAddress,
+        buyTokenAddress: strkBtcAddress,
+        sellAmount: amountBigInt,
+        takerAddress: address,
+        slippage,
       })
+      setQuote(q)
+    } catch (error) {
+      setQuoteError(parseWalletError(error))
+      setQuote(null)
+    } finally {
+      setIsFetchingQuote(false)
+    }
+  }, [parseInputAmount, address, inputAsset, getTokenAddress, strkBtcAddress, slippage])
 
-      if (!buildRes.ok) {
-        const err = await buildRes.text()
-        throw new Error(`AVNU build failed: ${err}`)
+  // Auto-fetch quote com debounce quando amount muda
+  useEffect(() => {
+    if (!inputAmount || parseFloat(inputAmount) <= 0) {
+      setQuote(null)
+      return
+    }
+    const timer = setTimeout(fetchSwapQuote, 600)
+    return () => clearTimeout(timer)
+  }, [inputAmount, inputAsset, fetchSwapQuote])
+
+  // ─── Execute swap ─────────────────────────────────────────────────────────
+
+  const handleSwap = async () => {
+    if (!account || !address || !quote) return
+
+    setTxError(null)
+    setTxHash(null)
+    setTransactionState('approving')
+
+    try {
+      const amountBigInt = parseInputAmount()
+      if (!amountBigInt) throw new Error('Invalid amount')
+
+      const sellAddress = getTokenAddress(inputAsset)
+      if (!sellAddress) throw new Error(`Token address not configured for ${inputAsset}`)
+
+      // Calcular minAmountOut com slippage
+      const slippageFactor = BigInt(10000 - slippage)
+      const minAmountOut = (quote.buyAmount * slippageFactor) / 10000n
+
+      // 1. Approve AVNU Router para gastar tokens
+      setTransactionState('approving')
+      const AVNU_ROUTER = process.env.NEXT_PUBLIC_AVNU_ROUTER_ADDRESS || ''
+      if (!AVNU_ROUTER) throw new Error('AVNU router address not configured. Set NEXT_PUBLIC_AVNU_ROUTER_ADDRESS in .env.local')
+
+      const approveCall = {
+        contractAddress: sellAddress,
+        entrypoint: 'approve',
+        calldata: CallData.compile({
+          spender: AVNU_ROUTER,
+          amount: {
+            low: amountBigInt & BigInt('0xffffffffffffffffffffffffffffffff'),
+            high: amountBigInt >> 128n,
+          },
+        }),
       }
 
-      const buildData = await buildRes.json()
+      // 2. Executar swap via AVNU
+      setTransactionState('submitting')
+      const swapCalldata = buildSwapCalldata(quote, address, minAmountOut)
 
-      // 3. Execute
-      const result = await account.execute(buildData.calls)
+      const swapCall = {
+        contractAddress: AVNU_ROUTER,
+        entrypoint: 'multi_route_swap',
+        calldata: swapCalldata,
+      }
+
+      const result = await account.execute([approveCall, swapCall])
       setTxHash(result.transaction_hash)
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Swap failed. Please try again.')
-    } finally {
-      setIsSwapping(false)
+      setLastTransactionHash(result.transaction_hash)
+      setTransactionState('success')
+      setInputAmount('')
+      setQuote(null)
+    } catch (error) {
+      const friendly = parseWalletError(error)
+      setTxError(friendly)
+      setTransactionState('error')
     }
   }
 
+  // ─── Formatação ───────────────────────────────────────────────────────────
+
+  const formatAmount = (amount: bigint, decimals: number): string => {
+    const divisor = 10n ** BigInt(decimals)
+    const whole = amount / divisor
+    const frac = amount % divisor
+    return `${whole}.${frac.toString().padStart(decimals, '0').slice(0, 6).replace(/0+$/, '') || '0'}`
+  }
+
+  const isSubmitting = transactionState === 'approving' || transactionState === 'submitting'
+  const canSwap = !!account && !!quote && !isSubmitting && parseInputAmount() !== null
+
+  // ─── Render ───────────────────────────────────────────────────────────────
+
   return (
-    <div className="min-h-screen bg-void px-8 py-12">
+    <div className="min-h-screen bg-void pt-24 pb-16 px-4">
       <div className="max-w-md mx-auto">
 
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-display font-bold text-text-primary mb-2">
-            Get strkBTC
-          </h1>
-          <p className="text-text-primary/60">
-            Convert your BTC-backed tokens to strkBTC to start earning privately.
-          </p>
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 rounded-xl bg-amber/10 border border-amber/30
+                            flex items-center justify-center">
+              <svg className="w-5 h-5 text-amber" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+              </svg>
+            </div>
+            <div>
+              <h1 className="text-xl font-display font-bold text-parchment">Get strkBTC</h1>
+              <p className="text-xs text-secondary">Powered by AVNU DEX Aggregator</p>
+            </div>
+          </div>
         </div>
 
-        {/* Current strkBTC balance */}
-        {balance && (
-          <div className="bg-panel border border-amber/10 rounded-xl p-4 mb-6
-                          flex items-center justify-between">
-            <span className="text-sm text-text-primary/60">Your strkBTC balance</span>
-            <span className="font-mono text-amber font-bold">{balance.formatted}</span>
-          </div>
-        )}
+        {/* Swap Card */}
+        <div className="bg-panel border border-subtle rounded-2xl p-6 space-y-4">
 
-        {/* Swap card */}
-        <div className="bg-panel border border-amber/20 rounded-2xl p-6 mb-4">
-
-          {/* Input */}
-          <div className="mb-2">
-            <label className="text-xs text-text-primary/50 mb-2 block">You send</label>
-            <div className="flex flex-col sm:flex-row gap-3">
-              {/* Asset selector */}
-              <select
-                value={inputAsset.id}
-                onChange={e => setInputAsset(INPUT_ASSETS.find(a => a.id === e.target.value)!)}
-                className="bg-void border border-amber/20 rounded-xl px-3 py-3
-                           text-amber font-mono text-sm focus:outline-none
-                           focus:border-amber/60"
-              >
-                {INPUT_ASSETS.map(a => (
-                  <option key={a.id} value={a.id}>{a.label}</option>
-                ))}
-              </select>
-              {/* Amount input */}
+          {/* Input: Sell */}
+          <div className="bg-surface border border-subtle rounded-xl p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-mono text-secondary uppercase tracking-wider">You sell</span>
+            </div>
+            <div className="flex items-center gap-3">
               <input
                 type="number"
-                placeholder="0.00000000"
+                placeholder="0.0"
                 value={inputAmount}
                 onChange={e => setInputAmount(e.target.value)}
-                className="flex-1 bg-void border border-amber/20 rounded-xl px-4 py-3
-                           font-mono text-text-primary placeholder-text-primary/20
-                           focus:outline-none focus:border-amber/60"
+                disabled={isSubmitting}
+                className="flex-1 bg-transparent text-2xl font-mono text-parchment
+                           outline-none placeholder-muted disabled:opacity-50"
+                min="0"
+                step="any"
               />
+              <select
+                value={inputAsset}
+                onChange={e => setInputAsset(e.target.value as BTCAssetKey)}
+                disabled={isSubmitting}
+                className="bg-void border border-subtle rounded-lg px-3 py-2
+                           text-sm font-mono text-parchment outline-none
+                           focus:border-amber/50 disabled:opacity-50"
+              >
+                {BTC_ASSETS.map(a => (
+                  <option key={a.addressKey} value={a.addressKey}>{a.symbol}</option>
+                ))}
+              </select>
             </div>
           </div>
 
           {/* Arrow */}
-          <div className="flex justify-center my-4">
+          <div className="flex justify-center">
             <div className="w-8 h-8 rounded-full bg-amber/10 border border-amber/30
                             flex items-center justify-center">
               <svg className="w-4 h-4 text-amber" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
             </div>
           </div>
 
-          {/* Output */}
-          <div className="mb-6">
-            <label className="text-xs text-text-primary/50 mb-2 block">You receive</label>
-            <div className="flex flex-col sm:flex-row gap-3">
-              <div className="bg-void border border-amber/20 rounded-xl px-3 py-3
-                              text-amber font-mono text-sm">
-                strkBTC
+          {/* Output: Buy */}
+          <div className="bg-surface border border-subtle rounded-xl p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-mono text-secondary uppercase tracking-wider">You receive</span>
+              <span className="text-xs font-mono text-zk-green">Private by default</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex-1 text-2xl font-mono text-parchment">
+                {isFetchingQuote ? (
+                  <span className="text-muted animate-pulse">Quoting...</span>
+                ) : quote ? (
+                  formatAmount(quote.buyAmount, 8)
+                ) : (
+                  <span className="text-muted">0.0</span>
+                )}
               </div>
-              <div className="flex-1 bg-void border border-amber/20 rounded-xl px-4 py-3
-                              font-mono text-zk-green">
-                {estimatedOutput}
+              <div className="px-3 py-2 bg-amber/10 border border-amber/30 rounded-lg">
+                <span className="text-sm font-mono text-amber">strkBTC</span>
               </div>
             </div>
           </div>
 
-          {/* Privacy note */}
-          <div className="flex items-start gap-2 bg-amber/5 border border-amber/10
-                          rounded-xl p-3 mb-6">
-            <svg className="w-4 h-4 text-amber shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <p className="text-xs text-text-primary/60">
-              strkBTC has private balances by default via Starknet STRK20.
-              After this swap, your balance will be shielded automatically.
-            </p>
-          </div>
-
-          {/* Error */}
-          {error && (
-            <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 mb-4">
-              <p className="text-red-400 text-sm">{error}</p>
+          {/* Quote details */}
+          {quote && !isFetchingQuote && (
+            <div className="bg-void/50 rounded-xl p-4 space-y-2 text-xs font-mono">
+              <div className="flex justify-between">
+                <span className="text-secondary">Rate</span>
+                <span className="text-parchment">
+                  1 {selectedAsset.symbol} = {quote.price.toFixed(6)} strkBTC
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-secondary">Price impact</span>
+                <span className={quote.priceImpact > 1 ? 'text-error' : 'text-parchment'}>
+                  {quote.priceImpact.toFixed(2)}%
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-secondary">Route</span>
+                <span className="text-parchment">
+                  {quote.route.map(r => r.name).join(' → ')}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-secondary">Slippage</span>
+                <span className="text-parchment">{(slippage / 100).toFixed(1)}%</span>
+              </div>
             </div>
           )}
 
-          {/* CTA */}
-          <button
-            onClick={handleSwap}
-            disabled={!address || !inputAmount || isSwapping}
-            className="w-full bg-amber text-void font-bold py-4 rounded-xl
-                       hover:bg-amber/90 transition-colors disabled:opacity-40
-                       disabled:cursor-not-allowed"
-          >
-            {isSwapping ? 'Swapping...' : `Convert to strkBTC`}
-          </button>
-        </div>
-
-        {/* Success state */}
-        {txHash && (
-          <div className="bg-zk-green/10 border border-zk-green/30 rounded-xl p-4">
-            <p className="text-zk-green font-medium mb-2">Swap successful</p>
-            <a
-              href={`https://sepolia.voyager.online/tx/${txHash}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1 text-sm text-text-primary/60
-                         hover:text-amber transition-colors"
+          {/* Slippage setting */}
+          <div className="flex items-center gap-2 text-xs font-mono">
+            <span className="text-secondary">Slippage:</span>
+            <select
+              value={slippage}
+              onChange={e => setSlippage(Number(e.target.value))}
+              disabled={isSubmitting}
+              className="bg-void border border-subtle rounded px-2 py-1 text-parchment"
             >
-              View on Voyager 
-              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-              </svg>
-            </a>
-            <button
-              onClick={() => window.location.href = '/yield'}
-              className="mt-3 w-full border border-amber/30 text-amber py-3
-                         rounded-xl hover:bg-amber/10 transition-colors text-sm font-medium"
-            >
-              Start earning with strkBTC →
-            </button>
+              <option value={30}>0.3%</option>
+              <option value={50}>0.5%</option>
+              <option value={100}>1.0%</option>
+              <option value={300}>3.0%</option>
+            </select>
           </div>
-        )}
 
-        {/* Info: Why strkBTC */}
-        <div className="mt-8 space-y-3">
-          <p className="text-xs text-text-primary/40 uppercase tracking-wider font-mono">
-            Why strkBTC?
-          </p>
-          {[
-            'Private balance — no one can see how much you hold',
-            'Earn yield on Vesu, Ekubo, Re7 while staying private',
-            'Viewing keys for compliance when you need it',
-            'Issued by Starknet — not a third-party custodian',
-          ].map((item, i) => (
-            <div key={i} className="flex items-center gap-2 text-sm text-text-primary/60">
-              <span className="text-zk-green">✓</span>
-              {item}
+          {/* Erros */}
+          {quoteError && (
+            <div className="bg-error/10 border border-error/30 rounded-xl p-3">
+              <p className="text-xs text-error font-mono">{quoteError}</p>
             </div>
-          ))}
+          )}
+          {txError && (
+            <div className="bg-error/10 border border-error/30 rounded-xl p-3">
+              <p className="text-xs text-error font-mono">{txError}</p>
+            </div>
+          )}
+
+          {/* Sucesso */}
+          {transactionState === 'success' && txHash && (
+            <div className="bg-zk-green/10 border border-zk-green/30 rounded-xl p-3">
+              <p className="text-xs text-zk-green font-mono">
+                Swap confirmed!{' '}
+                <a
+                  href={`https://sepolia.starkscan.co/tx/${txHash}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+                >
+                  View on explorer ↗
+                </a>
+              </p>
+            </div>
+          )}
+
+          {/* Wallet / Swap button */}
+          {!account ? (
+            <WalletConnector />
+          ) : (
+            <button
+              onClick={handleSwap}
+              disabled={!canSwap}
+              className="w-full py-4 rounded-xl font-mono text-sm uppercase tracking-wider
+                         transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed
+                         bg-amber text-void font-bold hover:bg-amber/90
+                         disabled:bg-subtle disabled:text-muted"
+            >
+              {isSubmitting
+                ? transactionState === 'approving'
+                  ? 'Approving...'
+                  : 'Swapping...'
+                : 'Swap'}
+            </button>
+          )}
         </div>
+
+        {/* Info */}
+        <p className="text-center text-xs text-muted mt-4 font-mono">
+          strkBTC is private by default via Starknet STRK20 protocol
+        </p>
 
       </div>
     </div>
   )
-}
-
-function parseWalletError(err: unknown): string {
-  const msg = err instanceof Error ? err.message : String(err)
-  const map: Record<string, string> = {
-    'User rejected':         'Connection rejected. Please approve in your wallet.',
-    'Wallet not found':      'Wallet not found. Install Argent X or Braavos.',
-    'Network mismatch':      'Wrong network. Switch to Starknet Sepolia.',
-    'insufficient funds':    'Insufficient STRK for gas.',
-    'StarknetChainMismatch': 'Wrong network. Switch to Starknet Sepolia.',
-  }
-  for (const [key, friendly] of Object.entries(map)) {
-    if (msg.includes(key)) return friendly
-  }
-  return 'Transaction failed. Please try again.'
 }

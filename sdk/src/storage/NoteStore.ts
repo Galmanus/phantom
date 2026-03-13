@@ -1,31 +1,58 @@
 /**
  * NoteStore - Encrypted local storage for ShieldedNotes
- * 
+ *
  * CRITICAL SECURITY:
  * - Notes are NEVER sent to any server
  * - Notes are NEVER stored in localStorage
  * - Notes are NEVER stored in plain text
- * - Encryption key is derived from user password via PBKDF2
+ * - Encryption key is derived from user password via PBKDF2 with per-user salt
  */
 
-import { openDB, IDBPDatabase } from 'idb';
+import { openDB, IDBPDatabase, IDBKeyRange } from 'idb';
 import type { ShieldedNote, YieldPosition, IntentReceipt } from '../types';
-import { NoteSelectionError } from '../types';
+import { NoteSelectionError, StorageError } from '../types';
+import {
+  deriveEncryptionKey,
+  encrypt,
+  decrypt,
+  toHex,
+  fromHex,
+} from './encryption';
+import {
+  createBackupData,
+  serializeBackup,
+  deserializeBackup,
+  createBackupBlob,
+  parseBackupFile,
+  validateBackupFile,
+  type EncryptedBackupFile,
+} from './backup';
 
 const DB_NAME = 'phantom-notes-v1';
 const DB_VERSION = 1;
-const NOTES_STORE = 'notes';
-const YIELD_STORE = 'yield-positions';
-const INTENTS_STORE = 'intents';
+const STORE_NOTES = 'shielded_notes';
+const STORE_YIELD = 'yield_positions';
+const STORE_INTENTS = 'intents';
+const STORE_META = 'meta';
 
-// PBKDF2 parameters (OWASP 2024 recommendation)
-const PBKDF2_ITERATIONS = 600000;
-const PBKDF2_SALT = new TextEncoder().encode('PHANTOM_V1_FIXED_SALT_FOR_KEY_DERIVATION');
+// Key for meta store
+const META_SALT_KEY = 'encryption_salt';
+
+/**
+ * Internal record structure stored in IndexedDB
+ */
+interface EncryptedRecord {
+  id: string;
+  ciphertext: string;  // hex encoded
+  iv: string;         // hex encoded
+  createdAt: number;
+  spent?: boolean;    // indexed for quick queries
+}
 
 export class NoteStore {
   private db: IDBPDatabase | null = null;
   private encryptionKey: CryptoKey | null = null;
-  private passwordVerified = false;
+  private initialized = false;
 
   constructor(private password: string) {}
 
@@ -33,126 +60,139 @@ export class NoteStore {
    * Initialize the store and derive encryption key
    */
   async initialize(): Promise<void> {
-    // Open IndexedDB
-    this.db = await openDB(DB_NAME, DB_VERSION, {
-      upgrade(db) {
-        if (!db.objectStoreNames.contains(NOTES_STORE)) {
-          db.createObjectStore(NOTES_STORE, { keyPath: 'commitment' });
-        }
-        if (!db.objectStoreNames.contains(YIELD_STORE)) {
-          db.createObjectStore(YIELD_STORE, { keyPath: 'depositCommitment' });
-        }
-        if (!db.objectStoreNames.contains(INTENTS_STORE)) {
-          db.createObjectStore(INTENTS_STORE, { keyPath: 'commitment' });
-        }
-      },
-    });
+    if (this.initialized) return;
 
-    // Derive encryption key from password
-    this.encryptionKey = await this.deriveKey(this.password);
-    this.passwordVerified = true;
-  }
+    try {
+      // Open IndexedDB
+      this.db = await openDB(DB_NAME, DB_VERSION, {
+        upgrade(db) {
+          // Shielded notes store
+          if (!db.objectStoreNames.contains(STORE_NOTES)) {
+            const notesStore = db.createObjectStore(STORE_NOTES, { keyPath: 'id' });
+            notesStore.createIndex('spent', 'spent', { unique: false });
+            notesStore.createIndex('createdAt', 'createdAt', { unique: false });
+          }
+          // Yield positions store
+          if (!db.objectStoreNames.contains(STORE_YIELD)) {
+            const yieldStore = db.createObjectStore(STORE_YIELD, { keyPath: 'id' });
+            yieldStore.createIndex('spent', 'spent', { unique: false });
+          }
+          // Intents store
+          if (!db.objectStoreNames.contains(STORE_INTENTS)) {
+            db.createObjectStore(STORE_INTENTS, { keyPath: 'id' });
+          }
+          // Meta store for salt, version, etc.
+          if (!db.objectStoreNames.contains(STORE_META)) {
+            db.createObjectStore(STORE_META);
+          }
+        },
+      });
 
-  /**
-   * Derive AES-GCM key from password using PBKDF2
-   */
-  private async deriveKey(password: string): Promise<CryptoKey> {
-    const keyMaterial = await crypto.subtle.importKey(
-      'raw',
-      new TextEncoder().encode(password),
-      'PBKDF2',
-      false,
-      ['deriveKey']
-    );
+      // Get or create salt for key derivation
+      const existingSalt = await this.db.get(STORE_META, META_SALT_KEY);
+      let saltBytes: Uint8Array;
 
-    return crypto.subtle.deriveKey(
-      {
-        name: 'PBKDF2',
-        salt: PBKDF2_SALT,
-        iterations: PBKDF2_ITERATIONS,
-        hash: 'SHA-256',
-      },
-      keyMaterial,
-      { name: 'AES-GCM', length: 256 },
-      false,
-      ['encrypt', 'decrypt']
-    );
-  }
+      if (existingSalt) {
+        saltBytes = fromHex(existingSalt as string);
+      } else {
+        // Generate random salt for this user's database
+        saltBytes = crypto.getRandomValues(new Uint8Array(16));
+        await this.db.put(STORE_META, toHex(saltBytes), META_SALT_KEY);
+      }
 
-  /**
-   * Encrypt data using AES-GCM
-   */
-  private async encrypt(data: string): Promise<{ ciphertext: string; iv: string }> {
-    if (!this.encryptionKey) {
-      throw new Error('Store not initialized');
+      // Derive encryption key from password using PBKDF2
+      const { key } = await deriveEncryptionKey(this.password, saltBytes);
+      this.encryptionKey = key;
+
+      this.initialized = true;
+    } catch (error) {
+      throw new StorageError(
+        `Failed to initialize NoteStore: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
     }
-
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const encoded = new TextEncoder().encode(data);
-
-    const ciphertext = await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv },
-      this.encryptionKey,
-      encoded
-    );
-
-    return {
-      ciphertext: this.arrayBufferToBase64(ciphertext),
-      iv: this.arrayBufferToBase64(iv),
-    };
   }
 
   /**
-   * Decrypt data using AES-GCM
+   * Assert the store is initialized
    */
-  private async decrypt(ciphertext: string, iv: string): Promise<string> {
-    if (!this.encryptionKey) {
-      throw new Error('Store not initialized');
+  private assertReady(): void {
+    if (!this.initialized || !this.db || !this.encryptionKey) {
+      throw new StorageError('NoteStore not initialized. Call initialize() first.');
     }
-
-    const ciphertextBuffer = this.base64ToArrayBuffer(ciphertext);
-    const ivBuffer = this.base64ToArrayBuffer(iv);
-
-    const decrypted = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: ivBuffer },
-      this.encryptionKey,
-      ciphertextBuffer
-    );
-
-    return new TextDecoder().decode(decrypted);
   }
+
+  /**
+   * Encrypt a record
+   */
+  private async encryptRecord(data: unknown): Promise<{ ciphertext: string; iv: string }> {
+    const json = JSON.stringify(data, (_, value) =>
+      typeof value === 'bigint' ? value.toString() + 'n' : value
+    );
+    const { ciphertext, iv } = await encrypt(json, this.encryptionKey!);
+    return { ciphertext: toHex(ciphertext), iv: toHex(iv) };
+  }
+
+  /**
+   * Decrypt a record
+   */
+  private async decryptRecord<T>(record: EncryptedRecord): Promise<T> {
+    const plaintext = await decrypt(
+      fromHex(record.ciphertext),
+      fromHex(record.iv),
+      this.encryptionKey!
+    );
+    return JSON.parse(plaintext, (_, value) => {
+      if (typeof value === 'string' && value.endsWith('n') && /^\d+n$/.test(value)) {
+        return BigInt(value.slice(0, -1));
+      }
+      return value;
+    }) as T;
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════════
+  // SHIELDED NOTES
+  // ═════════════════════════════════════════════════════════════════════════════
 
   /**
    * Save a shielded note
    */
   async saveNote(note: ShieldedNote): Promise<void> {
-    if (!this.db) throw new Error('Store not initialized');
+    this.assertReady();
 
-    const serialized = JSON.stringify(note);
-    const { ciphertext, iv } = await this.encrypt(serialized);
+    const { ciphertext, iv } = await this.encryptRecord(note);
 
-    await this.db.put(NOTES_STORE, {
-      commitment: note.commitment,
-      encrypted_data: ciphertext,
+    const record: EncryptedRecord = {
+      id: note.commitment,
+      ciphertext,
       iv,
-      createdAt: Date.now(),
-    });
+      createdAt: note.createdAt,
+      spent: note.spent,
+    };
+
+    try {
+      await this.db!.add(STORE_NOTES, record);
+    } catch (error) {
+      // IDB throws ConstraintError if key already exists
+      throw new StorageError(
+        `Failed to save note ${note.commitment}: ${error instanceof Error ? error.message : String(error)}`,
+        { commitment: note.commitment, cause: error }
+      );
+    }
   }
 
   /**
    * Get a shielded note by commitment
    */
   async getNote(commitment: string): Promise<ShieldedNote | null> {
-    if (!this.db) throw new Error('Store not initialized');
+    this.assertReady();
 
-    const record = await this.db.get(NOTES_STORE, commitment);
+    const record = await this.db!.get(STORE_NOTES, commitment) as EncryptedRecord | undefined;
     if (!record) return null;
 
     try {
-      const decrypted = await this.decrypt(record.encrypted_data, record.iv);
-      return JSON.parse(decrypted) as ShieldedNote;
-    } catch (error) {
-      console.error('Failed to decrypt note:', error);
+      return await this.decryptRecord<ShieldedNote>(record);
+    } catch {
       return null;
     }
   }
@@ -161,17 +201,17 @@ export class NoteStore {
    * Get all shielded notes
    */
   async getAllNotes(): Promise<ShieldedNote[]> {
-    if (!this.db) throw new Error('Store not initialized');
+    this.assertReady();
 
-    const records = await this.db.getAll(NOTES_STORE);
+    const records = await this.db!.getAll(STORE_NOTES) as EncryptedRecord[];
     const notes: ShieldedNote[] = [];
 
     for (const record of records) {
       try {
-        const decrypted = await this.decrypt(record.encrypted_data, record.iv);
-        notes.push(JSON.parse(decrypted) as ShieldedNote);
-      } catch (error) {
-        console.error('Failed to decrypt note:', error);
+        const note = await this.decryptRecord<ShieldedNote>(record);
+        notes.push(note);
+      } catch {
+        console.warn('[NoteStore] Failed to decrypt note, skipping:', record.id);
       }
     }
 
@@ -179,205 +219,27 @@ export class NoteStore {
   }
 
   /**
-   * Delete a note
+   * Get only unspent notes (uses IndexedDB index for performance)
    */
-  async deleteNote(commitment: string): Promise<void> {
-    if (!this.db) throw new Error('Store not initialized');
-    await this.db.delete(NOTES_STORE, commitment);
-  }
+  async getUnspentNotes(): Promise<ShieldedNote[]> {
+    this.assertReady();
 
-  /**
-   * Save a yield position
-   */
-  async saveYieldPosition(position: YieldPosition): Promise<void> {
-    if (!this.db) throw new Error('Store not initialized');
+    const index = this.db!.transaction(STORE_NOTES).store.index('spent');
+    const records = await index.getAll(IDBKeyRange.only(false)) as EncryptedRecord[];
 
-    const serialized = JSON.stringify(position);
-    const { ciphertext, iv } = await this.encrypt(serialized);
-
-    await this.db.put(YIELD_STORE, {
-      depositCommitment: position.depositCommitment,
-      encrypted_data: ciphertext,
-      iv,
-      createdAt: Date.now(),
-    });
-  }
-
-  /**
-   * Get all yield positions
-   */
-  async getAllYieldPositions(): Promise<YieldPosition[]> {
-    if (!this.db) throw new Error('Store not initialized');
-
-    const records = await this.db.getAll(YIELD_STORE);
-    const positions: YieldPosition[] = [];
-
+    const notes: ShieldedNote[] = [];
     for (const record of records) {
       try {
-        const decrypted = await this.decrypt(record.encrypted_data, record.iv);
-        positions.push(JSON.parse(decrypted) as YieldPosition);
-      } catch (error) {
-        console.error('Failed to decrypt yield position:', error);
+        notes.push(await this.decryptRecord<ShieldedNote>(record));
+      } catch {
+        console.warn('[NoteStore] Failed to decrypt note, skipping:', record.id);
       }
     }
-
-    return positions;
+    return notes;
   }
 
   /**
-   * Save an intent receipt
-   */
-  async saveIntent(intent: IntentReceipt): Promise<void> {
-    if (!this.db) throw new Error('Store not initialized');
-
-    const serialized = JSON.stringify(intent);
-    const { ciphertext, iv } = await this.encrypt(serialized);
-
-    await this.db.put(INTENTS_STORE, {
-      commitment: intent.commitment,
-      encrypted_data: ciphertext,
-      iv,
-      createdAt: Date.now(),
-    });
-  }
-
-  /**
-   * Update intent status
-   */
-  async updateIntentStatus(commitment: string, status: IntentReceipt['status']): Promise<void> {
-    const intent = await this.getIntent(commitment);
-    if (intent) {
-      intent.status = status;
-      if (status === 'settled') {
-        intent.settledAt = Date.now();
-      }
-      await this.saveIntent(intent);
-    }
-  }
-
-  /**
-   * Get an intent receipt
-   */
-  async getIntent(commitment: string): Promise<IntentReceipt | null> {
-    if (!this.db) throw new Error('Store not initialized');
-
-    const record = await this.db.get(INTENTS_STORE, commitment);
-    if (!record) return null;
-
-    try {
-      const decrypted = await this.decrypt(record.encrypted_data, record.iv);
-      return JSON.parse(decrypted) as IntentReceipt;
-    } catch (error) {
-      console.error('Failed to decrypt intent:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Export encrypted backup of all notes
-   */
-  async exportEncryptedBackup(): Promise<Blob> {
-    const notes = await this.getAllNotes();
-    const positions = await this.getAllYieldPositions();
-
-    const backup = {
-      version: '1',
-      created_at: Date.now(),
-      notes: notes.map(n => JSON.stringify(n)),
-      yield_positions: positions.map(p => JSON.stringify(p)),
-    };
-
-    const serialized = JSON.stringify(backup);
-    const { ciphertext, iv } = await this.encrypt(serialized);
-
-    const backupFile = {
-      version: backup.version,
-      created_at: backup.created_at,
-      encrypted_data: ciphertext,
-      iv,
-    };
-
-    return new Blob([JSON.stringify(backupFile, null, 2)], {
-      type: 'application/json',
-    });
-  }
-
-  /**
-   * Import notes from encrypted backup
-   */
-  async importFromBackup(file: File): Promise<number> {
-    const text = await file.text();
-    const backupFile = JSON.parse(text);
-
-    if (backupFile.version !== '1') {
-      throw new Error('Unsupported backup version');
-    }
-
-    try {
-      const decrypted = await this.decrypt(backupFile.encrypted_data, backupFile.iv);
-      const backup = JSON.parse(decrypted);
-
-      let importedCount = 0;
-
-      // Import notes
-      for (const noteJson of backup.notes || []) {
-        const note = JSON.parse(noteJson) as ShieldedNote;
-        const existing = await this.getNote(note.commitment);
-        if (!existing) {
-          await this.saveNote(note);
-          importedCount++;
-        }
-      }
-
-      // Import yield positions
-      for (const positionJson of backup.yield_positions || []) {
-        const position = JSON.parse(positionJson) as YieldPosition;
-        const existing = await this.db!.get(YIELD_STORE, position.depositCommitment);
-        if (!existing) {
-          await this.saveYieldPosition(position);
-          importedCount++;
-        }
-      }
-
-      return importedCount;
-    } catch (error) {
-      throw new Error('Failed to decrypt backup - wrong password?');
-    }
-  }
-
-  /**
-   * Utility: ArrayBuffer to Base64
-   */
-  private arrayBufferToBase64(buffer: ArrayBuffer): string {
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
-  }
-
-  /**
-   * Utility: Base64 to ArrayBuffer
-   */
-  private base64ToArrayBuffer(base64: string): ArrayBuffer {
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    return bytes.buffer;
-  }
-
-  // ═════════════════════════════════════════════════════════════════════════════
-  // OBSTACLE 1 SOLUTION: Concurrent Transaction Handling
-  // ═════════════════════════════════════════════════════════════════════════════
-
-  /**
-   * Get notes by status
-   * 
-   * OBSTACLE 1: Used by SDK to select only confirmed notes for new proofs,
-   * preventing concurrent spending of the same UTXO.
+   * Get notes by status (OBSTACLE 1: for concurrent transaction handling)
    */
   async getNotesByStatus(
     assetId: number,
@@ -399,13 +261,7 @@ export class NoteStore {
 
   /**
    * Select notes for a new proof - ONLY returns confirmed notes
-   * 
-   * OBSTACLE 1 CORE SOLUTION:
-   * This method applies an automatic offset to skip pending notes,
-   * preventing the same UTXO from being selected in concurrent proofs.
-   * 
-   * This is the exact mechanism described in Aztec's forum post:
-   * "offset-based note selection" to solve UTXO concurrency.
+   * OBSTACLE 1 CORE SOLUTION: offset-based note selection to solve UTXO concurrency
    */
   async selectNotesForProof(
     assetId: number,
@@ -424,15 +280,27 @@ export class NoteStore {
       );
     }
 
-    // Coin selection: select minimum notes that cover the amount
-    const selected = this.coinSelect(confirmedNotes, amount, strategy);
+    // Sort notes by strategy
+    const sorted = [...confirmedNotes].sort((a, b) => {
+      if (strategy === 'oldest_first') {
+        return a.createdAt - b.createdAt;
+      }
+      return Number(a.amount - b.amount);
+    });
 
-    if (!selected) {
-      const total = confirmedNotes.reduce((acc, n) => acc + n.amount, 0n);
-      const pending = await this.countByStatus(assetId, 'pending');
+    // Coin selection: select minimum notes that cover the amount
+    let selected: ShieldedNote[] = [];
+    let total = 0n;
+
+    for (const note of sorted) {
+      selected.push(note);
+      total += note.amount;
+      if (total >= amount) break;
+    }
+
+    if (total < amount) {
       throw new NoteSelectionError(
-        `Insufficient confirmed balance. Available: ${total}, Required: ${amount}. ` +
-        `Note: ${pending} note(s) are pending confirmation.`
+        `Insufficient confirmed balance. Available: ${total}, Required: ${amount}.`
       );
     }
 
@@ -460,6 +328,17 @@ export class NoteStore {
   }
 
   /**
+   * Mark a note as spent
+   */
+  async markNoteSpent(commitment: string): Promise<void> {
+    const note = await this.getNote(commitment);
+    if (!note) {
+      throw new StorageError(`Note not found: ${commitment}`, { commitment });
+    }
+    await this.updateNoteStatus(commitment, 'spent');
+  }
+
+  /**
    * Update note status
    */
   async updateNoteStatus(
@@ -469,12 +348,13 @@ export class NoteStore {
     const note = await this.getNote(commitment);
     if (note) {
       note.status = status;
+      note.spent = status === 'spent';
       await this.saveNote(note);
     }
   }
 
   /**
-   * Update leaf index
+   * Update leaf index after on-chain confirmation
    */
   async updateLeafIndex(commitment: string, leafIndex: number): Promise<void> {
     const note = await this.getNote(commitment);
@@ -485,58 +365,278 @@ export class NoteStore {
   }
 
   /**
+   * Confirm note after seeing it in a block
+   */
+  async confirmNote(commitment: string): Promise<void> {
+    await this.updateNoteStatus(commitment, 'confirmed');
+  }
+
+  /**
    * Restore notes to confirmed status after failed transaction
-   * 
-   * OBSTACLE 1: If a transaction reverts, we restore the notes
-   * so they can be used in future transactions.
+   * OBSTACLE 1: If a transaction reverts, restore notes so they can be used in future transactions
    */
   async restoreNotesAfterFailure(commitments: string[]): Promise<void> {
     await this.markNotesStatus(commitments, 'confirmed');
   }
 
   /**
-   * Confirm note after seeing it in a block
-   * 
-   * Called when a Shield event is detected on-chain
+   * Delete a note
    */
-  async confirmNote(commitment: string, leafIndex: number): Promise<void> {
-    await this.updateNoteStatus(commitment, 'confirmed');
-    await this.updateLeafIndex(commitment, leafIndex);
+  async deleteNote(commitment: string): Promise<void> {
+    this.assertReady();
+    await this.db!.delete(STORE_NOTES, commitment);
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════════
+  // YIELD POSITIONS
+  // ═════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Save a yield position
+   */
+  async saveYieldPosition(position: YieldPosition): Promise<void> {
+    this.assertReady();
+
+    const { ciphertext, iv } = await this.encryptRecord(position);
+
+    const record: EncryptedRecord = {
+      id: position.depositCommitment,
+      ciphertext,
+      iv,
+      createdAt: position.depositTimestamp,
+      spent: position.claimed,
+    };
+
+    try {
+      await this.db!.add(STORE_YIELD, record);
+    } catch (error) {
+      throw new StorageError(
+        `Failed to save yield position: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
+    }
   }
 
   /**
-   * Mark note as spent
+   * Get all yield positions
    */
-  async markNoteSpent(commitment: string): Promise<void> {
-    await this.updateNoteStatus(commitment, 'spent');
-  }
+  async getAllYieldPositions(): Promise<YieldPosition[]> {
+    this.assertReady();
 
-  /**
-   * Standard coin selection (greedy algorithm)
-   * 
-   * Minimizes the number of notes used to cover the target amount.
-   */
-  private coinSelect(
-    notes: ShieldedNote[],
-    target: bigint,
-    strategy: 'oldest_first' | 'smallest_first',
-  ): ShieldedNote[] | null {
-    const sorted = [...notes].sort((a, b) => {
-      if (strategy === 'oldest_first') {
-        return Number(a.createdAt - b.createdAt);
+    const records = await this.db!.getAll(STORE_YIELD) as EncryptedRecord[];
+    const positions: YieldPosition[] = [];
+
+    for (const record of records) {
+      try {
+        positions.push(await this.decryptRecord<YieldPosition>(record));
+      } catch {
+        console.warn('[NoteStore] Failed to decrypt yield position, skipping:', record.id);
       }
-      return Number(a.amount - b.amount);
-    });
-
-    const selected: ShieldedNote[] = [];
-    let accumulated = 0n;
-
-    for (const note of sorted) {
-      selected.push(note);
-      accumulated += note.amount;
-      if (accumulated >= target) return selected;
     }
 
-    return null; // insufficient funds
+    return positions;
+  }
+
+  /**
+   * Get active (non-claimed) yield positions
+   */
+  async getActiveYieldPositions(): Promise<YieldPosition[]> {
+    this.assertReady();
+
+    const index = this.db!.transaction(STORE_YIELD).store.index('spent');
+    const records = await index.getAll(IDBKeyRange.only(false)) as EncryptedRecord[];
+
+    const positions: YieldPosition[] = [];
+    for (const record of records) {
+      try {
+        positions.push(await this.decryptRecord<YieldPosition>(record));
+      } catch {
+        console.warn('[NoteStore] Failed to decrypt yield position, skipping:', record.id);
+      }
+    }
+    return positions;
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════════
+  // INTENTS (for dark pool)
+  // ═════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Save an intent receipt
+   */
+  async saveIntent(intent: IntentReceipt): Promise<void> {
+    this.assertReady();
+
+    const { ciphertext, iv } = await this.encryptRecord(intent);
+
+    await this.db!.put(STORE_INTENTS, {
+      id: intent.commitment,
+      ciphertext,
+      iv,
+      createdAt: intent.submittedAt,
+    });
+  }
+
+  /**
+   * Get an intent receipt
+   */
+  async getIntent(commitment: string): Promise<IntentReceipt | null> {
+    this.assertReady();
+
+    const record = await this.db!.get(STORE_INTENTS, commitment) as EncryptedRecord | undefined;
+    if (!record) return null;
+
+    try {
+      return await this.decryptRecord<IntentReceipt>(record);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Update intent status
+   */
+  async updateIntentStatus(commitment: string, status: IntentReceipt['status']): Promise<void> {
+    const intent = await this.getIntent(commitment);
+    if (intent) {
+      intent.status = status;
+      if (status === 'settled') {
+        intent.settledAt = Date.now();
+      }
+      await this.saveIntent(intent);
+    }
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════════
+  // BACKUP & RESTORE
+  // ═════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Export encrypted backup of all notes
+   */
+  async exportBackup(): Promise<Blob> {
+    this.assertReady();
+
+    const notes = await this.getAllNotes();
+    const positions = await this.getAllYieldPositions();
+
+    const backupData = createBackupData(notes, positions);
+    const serialized = serializeBackup(backupData);
+
+    const { ciphertext, iv } = await encrypt(serialized, this.encryptionKey!);
+
+    const encryptedFile: EncryptedBackupFile = {
+      version: '1',
+      created_at: Date.now(),
+      encrypted_data: toHex(ciphertext),
+      iv: toHex(iv),
+    };
+
+    return createBackupBlob(encryptedFile);
+  }
+
+  /**
+   * Import notes from encrypted backup
+   */
+  async importBackup(file: File): Promise<number> {
+    this.assertReady();
+
+    const rawJson = await parseBackupFile(file);
+    const parsed = JSON.parse(rawJson);
+
+    if (!validateBackupFile(parsed)) {
+      throw new StorageError('Invalid backup file format');
+    }
+
+    const plaintext = await decrypt(
+      fromHex(parsed.encrypted_data),
+      fromHex(parsed.iv),
+      this.encryptionKey!
+    );
+
+    const backupData = deserializeBackup(plaintext);
+    let importedCount = 0;
+
+    // Import notes
+    for (const noteJson of backupData.notes) {
+      try {
+        const note = JSON.parse(noteJson, (_, value) => {
+          if (typeof value === 'string' && /^\d+$/.test(value) && value.length > 10) {
+            return BigInt(value);
+          }
+          return value;
+        }) as ShieldedNote;
+
+        const existing = await this.getNote(note.commitment);
+        if (!existing) {
+          await this.saveNote(note);
+          importedCount++;
+        }
+      } catch (e) {
+        console.warn('[NoteStore] Failed to import note, skipping:', e);
+      }
+    }
+
+    // Import yield positions
+    for (const positionJson of backupData.yield_positions) {
+      try {
+        const position = JSON.parse(positionJson) as YieldPosition;
+        const existing = await this.db!.get(STORE_YIELD, position.depositCommitment);
+        if (!existing) {
+          await this.saveYieldPosition(position);
+          importedCount++;
+        }
+      } catch (e) {
+        console.warn('[NoteStore] Failed to import yield position, skipping:', e);
+      }
+    }
+
+    return importedCount;
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════════
+  // UTILITIES
+  // ═════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Get storage statistics
+   */
+  async getStats(): Promise<{
+    notes: number;
+    yieldPositions: number;
+    unspentNotes: number;
+  }> {
+    this.assertReady();
+
+    const [notes, yieldPositions, unspentNotes] = await Promise.all([
+      this.db!.count(STORE_NOTES),
+      this.db!.count(STORE_YIELD),
+      this.getUnspentNotes().then(n => n.length),
+    ]);
+
+    return { notes, yieldPositions, unspentNotes };
+  }
+
+  /**
+   * Clear all data (IRREVERSIBLE)
+   * Only used for development / account reset
+   */
+  async clearAll(): Promise<void> {
+    this.assertReady();
+    await this.db!.clear(STORE_NOTES);
+    await this.db!.clear(STORE_YIELD);
+    await this.db!.clear(STORE_INTENTS);
+  }
+
+  /**
+   * Close the database connection
+   */
+  close(): void {
+    if (this.db) {
+      this.db.close();
+      this.db = null;
+      this.encryptionKey = null;
+      this.initialized = false;
+    }
   }
 }
