@@ -4,8 +4,8 @@
 //! enabling browser-based proof generation.
 
 use wasm_bindgen::prelude::*;
-use phantom_prover::shield::{prove_shield};
-use phantom_prover::crypto::poseidon::{FieldElement, derive_commitment};
+use phantom_prover::shield::{prove_shield, verify_shield};
+use phantom_prover::crypto::poseidon::{FieldElement, derive_commitment, fe_to_hex, fe_from_hex};
 
 /// Initialize panic hook for better error messages in WASM
 #[wasm_bindgen(start)]
@@ -77,11 +77,11 @@ impl ShieldProofOutput {
 #[wasm_bindgen]
 pub fn prove_shield_wasm(input: JsValue) -> Result<ShieldProofOutput, JsValue> {
     let input: ShieldProofInput = serde_wasm_bindgen::from_value(input)
-        .map_err(|e| JsValue::from_str(&format!("Failed to parse input: {}", e)))?;;
+        .map_err(|e| JsValue::from_str(&format!("Failed to parse input: {}", e)))?;
 
-    let amount = FieldElement::from_u64(input.amount);
-    let nullifier_secret = FieldElement::from_u64(input.nullifier_secret);
-    let salt = FieldElement::from_u64(input.salt);
+    let amount = FieldElement::from(input.amount);
+    let nullifier_secret = FieldElement::from(input.nullifier_secret);
+    let salt = FieldElement::from(input.salt);
     
     // Compute commitment
     let commitment = derive_commitment(&amount, input.asset_id, &nullifier_secret, &salt);
@@ -92,8 +92,8 @@ pub fn prove_shield_wasm(input: JsValue) -> Result<ShieldProofOutput, JsValue> {
 
     Ok(ShieldProofOutput {
         proof_hex: proof.to_hex(),
-        commitment: commitment.to_hex(),
-        nullifier_hash: FieldElement::from_u64(input.nullifier_secret).to_hex(),
+        commitment: fe_to_hex(&commitment),
+        nullifier_hash: fe_to_hex(&FieldElement::from(input.nullifier_secret)),
         asset_id: input.asset_id,
     })
 }
@@ -103,7 +103,7 @@ pub fn prove_shield_wasm(input: JsValue) -> Result<ShieldProofOutput, JsValue> {
 pub fn verify_shield_wasm(proof_hex: String, commitment: String, asset_id: u8) -> Result<bool, JsValue> {
     use phantom_prover::shield::verify_shield;
     
-    let commitment_fe = FieldElement::from_hex(&commitment[2..])
+    let commitment_fe = fe_from_hex(&commitment[2..])
         .map_err(|e| JsValue::from_str(&format!("Invalid commitment: {}", e)))?;
     
     Ok(verify_shield(&proof_hex, commitment_fe, asset_id))

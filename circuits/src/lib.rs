@@ -4,8 +4,8 @@
 //! optimized for WASM execution in the browser.
 
 pub mod crypto;
-// pub mod shield;  // TODO: Implement shield circuit
-// pub mod unshield;  // TODO: Implement unshield circuit
+pub mod shield;    // PLACEHOLDER: Real Stwo proof pending Starknet 0.14.2
+pub mod unshield;  // PLACEHOLDER: Real Stwo proof pending Starknet 0.14.2
 pub mod private_swap;
 pub mod private_yield;
 pub mod compliance;
@@ -17,3 +17,6 @@ pub mod wasm;
 pub use crypto::poseidon;
 pub use crypto::merkle;
 pub use crypto::nullifier;
+
+// Re-export helper functions for WASM bindings
+pub use crypto::poseidon::{fe_to_hex, fe_from_hex, fe_from_u64};
