@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
-import { usePhantom } from '@/app/providers/PhantomProvider'
 import { useAccount } from '@starknet-react/core'
+import { PhantomKeyManager } from '@/sdk/src/key-derivation'
 
 type DisclosureScope = 'full' | 'range' | 'existence'
 
@@ -14,7 +14,6 @@ interface ViewingKeyConfig {
 
 export default function CompliancePage() {
   const { address } = useAccount()
-  const { isReady } = usePhantom()
   const [config, setConfig] = useState<ViewingKeyConfig>({
     scope: 'full',
     expiresAt: null,
@@ -24,13 +23,20 @@ export default function CompliancePage() {
   const [generatedKey, setGeneratedKey] = useState<string | null>(null)
   const [isCopied, setIsCopied] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const handleGenerate = async () => {
-    if (!isReady) return
+    if (!address) return
     setIsGenerating(true)
+    setError(null)
     try {
-      const key = await generateViewingKey(config, address!)
+      const keyManager = await PhantomKeyManager.fromWallet(address)
+      // Format IVK as a compact viewing key string
+      const key = `phantom_vk_${config.scope}_${keyManager.ivkHex}`
       setGeneratedKey(key)
+    } catch (err) {
+      console.error('Key generation failed:', err)
+      setError(err instanceof Error ? err.message : 'Key generation failed')
     } finally {
       setIsGenerating(false)
     }
@@ -199,7 +205,7 @@ export default function CompliancePage() {
           {/* Generate button */}
           <button
             onClick={handleGenerate}
-            disabled={!isReady || isGenerating}
+            disabled={!address || isGenerating}
             className="w-full bg-amber text-void font-bold py-4 rounded-xl
                        hover:bg-amber/90 transition-colors disabled:opacity-40"
           >

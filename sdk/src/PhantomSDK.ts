@@ -31,7 +31,7 @@ import type {
   KYCProofData,
 } from './types';
 import { generateRandomFieldElement } from './storage/encryption';
-import { encryptNote, PhantomKeyManager } from './key-derivation';
+import { encryptNoteWithIVK, PhantomKeyManager } from './key-derivation';
 
 export class PhantomSDK {
   private provider: RpcProvider;
@@ -95,18 +95,23 @@ export class PhantomSDK {
    * OBSTACLE 4 SOLUTION: The encrypted_note is emitted in the Shielded event,
    * allowing users to recover their notes from chain events using their IVK.
    */
-  private encryptNoteForRecovery(note: ShieldedNote): string {
+  private async encryptNoteForRecovery(note: ShieldedNote): Promise<string> {
     // Derive IVK from the account (simplified - in production use proper key derivation)
     const ivk = BigInt(this.account.address) % (1n << 251n);
     
-    return encryptNote(
+    // Convert bigint to Uint8Array for encryption
+    const ivkBytes = new Uint8Array(32);
+    for (let i = 0; i < 32; i++) {
+      ivkBytes[31 - i] = Number((ivk >> BigInt(i * 8)) & 0xffn);
+    }
+    
+    return encryptNoteWithIVK(
       {
         amount: note.amount,
-        assetId: note.assetId,
-        nullifierSecret: BigInt(note.nullifierSecret),
-        salt: BigInt(note.salt),
+        nullifierSecret: note.nullifierSecret,
+        salt: note.salt,
       },
-      ivk
+      ivkBytes
     );
   }
 

@@ -1,7 +1,4 @@
 {
   "/page": "app/page.js",
-  "/yield/page": "app/yield/page.js",
-  "/swap/page": "app/swap/page.js",
-  "/compliance/page": "app/compliance/page.js",
-  "/developers/page": "app/developers/page.js"
+  "/swap/page": "app/swap/page.js"
 }

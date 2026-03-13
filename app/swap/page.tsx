@@ -1,7 +1,6 @@
 'use client'
 import { useState } from 'react'
 import { useAccount } from '@starknet-react/core'
-import { usePhantom } from '@/app/providers/PhantomProvider'
 import { useStrkBTC } from '@/hooks/useStrkBTC'
 
 // Supported input assets
@@ -13,8 +12,7 @@ const INPUT_ASSETS = [
 ]
 
 export default function SwapPage() {
-  const { address } = useAccount()
-  const { starkzap, isReady } = usePhantom()
+  const { account, address } = useAccount()
   const { balance } = useStrkBTC()
   const [inputAsset, setInputAsset] = useState(INPUT_ASSETS[0])
   const [inputAmount, setInputAmount] = useState('')
@@ -28,28 +26,67 @@ export default function SwapPage() {
     : '0.00000000'
 
   const handleSwap = async () => {
-    if (!isReady || !inputAmount) return
+    if (!account || !address || !inputAmount || parseFloat(inputAmount) <= 0) return
     setIsSwapping(true)
     setError(null)
+    setTxHash(null)
+
     try {
-      // Use Starkzap to swap input asset → strkBTC
-      const sdk = starkzap as any
-      if (sdk?.swap) {
-        const result = await sdk.swap({
-          fromToken: inputAsset.id,
-          toToken: 'strkbtc',
-          amount: BigInt(Math.floor(parseFloat(inputAmount) * 10 ** inputAsset.decimals)),
-        })
-        setTxHash(result.txHash)
-      } else {
-        // No swap SDK available - throw error
-        throw new Error(
-          'Swap not available: starkzap not initialized. ' +
-          'Please ensure your wallet is connected and try again.'
-        )
+      const sellAmount = BigInt(
+        Math.floor(parseFloat(inputAmount) * 10 ** inputAsset.decimals)
+      )
+      const strkBtcAddress = process.env.NEXT_PUBLIC_STRKBTC_ADDRESS
+
+      if (!strkBtcAddress) {
+        throw new Error('STRKBTC address not configured')
       }
-    } catch (e: any) {
-      setError(parseWalletError(e))
+
+      // 1. Fetch quote from AVNU
+      const quoteRes = await fetch(
+        `https://starknet.api.avnu.fi/swap/v2/quotes?` +
+        `sellTokenAddress=${inputAsset.address}&` +
+        `buyTokenAddress=${strkBtcAddress}&` +
+        `sellAmount=0x${sellAmount.toString(16)}&` +
+        `takerAddress=${address}`
+      )
+
+      if (!quoteRes.ok) {
+        const err = await quoteRes.text()
+        throw new Error(`AVNU quote failed: ${err}`)
+      }
+
+      const quoteData = await quoteRes.json()
+      const quotes = quoteData.quotes ?? quoteData
+
+      if (!Array.isArray(quotes) || quotes.length === 0) {
+        throw new Error('No swap route available for this pair')
+      }
+
+      const bestQuote = quotes[0]
+
+      // 2. Build swap calldata
+      const buildRes = await fetch('https://starknet.api.avnu.fi/swap/v2/build', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          quoteId: bestQuote.quoteId,
+          takerAddress: address,
+          slippage: 0.005, // 0.5%
+        }),
+      })
+
+      if (!buildRes.ok) {
+        const err = await buildRes.text()
+        throw new Error(`AVNU build failed: ${err}`)
+      }
+
+      const buildData = await buildRes.json()
+
+      // 3. Execute
+      const result = await account.execute(buildData.calls)
+      setTxHash(result.transaction_hash)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Swap failed. Please try again.')
     } finally {
       setIsSwapping(false)
     }
@@ -157,7 +194,7 @@ export default function SwapPage() {
           {/* CTA */}
           <button
             onClick={handleSwap}
-            disabled={!isReady || !inputAmount || isSwapping}
+            disabled={!address || !inputAmount || isSwapping}
             className="w-full bg-amber text-void font-bold py-4 rounded-xl
                        hover:bg-amber/90 transition-colors disabled:opacity-40
                        disabled:cursor-not-allowed"

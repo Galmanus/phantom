@@ -27,8 +27,7 @@
     "@noble/hashes": "^1.4.0",
     "@noble/ciphers": "^0.5.0",
     "idb": "^8.0.0",
-    "starknet": "^6.0.0",
-    "starkzap": "^1.0.0"
+    "starknet": "^8.9.2"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
@@ -39,7 +38,7 @@
     "vitest": "^1.0.0"
   },
   "peerDependencies": {
-    "starknet": "^6.0.0"
+    "starknet": "^8.9.2"
   },
   "engines": {
     "node": ">=20.0.0"

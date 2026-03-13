@@ -16,8 +16,8 @@ export interface WalletState {
   usdcBalance: bigint | null;
 
   phantomMasterKeyInitialized: boolean;
-  incomingViewingKey: bigint | null;
-  fullViewingKey: bigint | null;
+  incomingViewingKey: string | null;
+  fullViewingKey: string | null;
 
   isWrongNetwork: boolean;
   expectedChainId: bigint;
@@ -29,7 +29,7 @@ export interface WalletState {
   setWalletConnected: (address: string, account: AccountInterface, chainId: bigint) => void;
   setWalletDisconnected: () => void;
   setBalances: (balances: Partial<Pick<WalletState, "strkBalance" | "wbtcBalance" | "tbtcBalance" | "usdcBalance">>) => void;
-  setPhantomKeys: (ivk: bigint, fvk: bigint | null) => void;
+  setPhantomKeys: (ivk: string | null, fvk: string | null) => void;
   clearPhantomKeys: () => void;
   setTransactionState: (state: WalletState["transactionState"]) => void;
   setLastTransactionHash: (hash: string | null) => void;
@@ -82,7 +82,7 @@ export const useWalletStore = create<WalletState>()(
     setPhantomKeys: (ivk, fvk) => set({
       incomingViewingKey: ivk,
       fullViewingKey: fvk,
-      phantomMasterKeyInitialized: true,
+      phantomMasterKeyInitialized: ivk !== null,
     }),
 
     clearPhantomKeys: () => set({

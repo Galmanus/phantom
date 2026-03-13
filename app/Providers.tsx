@@ -8,6 +8,7 @@ import {
   voyager,
 } from "@starknet-react/core"
 import { InjectedConnector } from "starknetkit/injected"
+import { PhantomProvider } from "./providers/PhantomProvider"
 
 const IS_MAINNET = process.env.NEXT_PUBLIC_STARKNET_NETWORK === "mainnet"
 const SUPPORTED_CHAINS = IS_MAINNET ? [mainnet] : [sepolia]
@@ -39,7 +40,9 @@ function ProvidersInner({ children }: { children: React.ReactNode }) {
       explorer={voyager}
       autoConnect={true}
     >
-      {children}
+      <PhantomProvider>
+        {children}
+      </PhantomProvider>
     </StarknetConfig>
   )
 }

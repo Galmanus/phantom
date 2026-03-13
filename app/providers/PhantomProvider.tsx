@@ -1,26 +1,21 @@
-/**
- * Phantom SDK Provider for React - Starkzap Edition
- * 
- * Provides the StarkZap-powered Phantom instance to all components
- * Replaces the old shield pool architecture with Private BTC Yield Manager
- */
-
 'use client'
 
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react'
-import { StarkZap } from 'starkzap'
 import { useAccount } from '@starknet-react/core'
+import type { AccountInterface } from 'starknet'
 
 interface PhantomContextValue {
-  starkzap: StarkZap | null
   isReady: boolean
   error: string | null
+  account: AccountInterface | undefined
+  address: string | null
 }
 
 const PhantomContext = createContext<PhantomContextValue>({
-  starkzap: null,
   isReady: false,
   error: null,
+  account: undefined,
+  address: null,
 })
 
 export function usePhantom() {
@@ -29,59 +24,22 @@ export function usePhantom() {
   return ctx
 }
 
-interface PhantomProviderProps {
-  children: ReactNode
-}
-
-export function PhantomProvider({ children }: PhantomProviderProps) {
-  const [starkzap, setStarkzap] = useState<StarkZap | null>(null)
+export function PhantomProvider({ children }: { children: ReactNode }) {
+  const { account, address, status } = useAccount()
   const [isReady, setIsReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  
-  const { account } = useAccount()
 
   useEffect(() => {
-    // Initialize StarkZap once at app level
-    // Use default sepolia network - can be changed via environment
-    const network = (process.env.NEXT_PUBLIC_STARKNET_NETWORK === 'mainnet' 
-      ? 'mainnet' 
-      : 'sepolia') as 'mainnet' | 'sepolia'
-    
-    const starkzapInstance = new StarkZap({
-      network,
-    })
-    
-    setStarkzap(starkzapInstance as any)
-  }, [])
-
-  useEffect(() => {
-    async function connectStarkzap() {
-      if (!starkzap || !account) {
-        setIsReady(false)
-        return
-      }
-
-      try {
-        // Connect starkzap to the user's wallet
-        // Cast to any since the actual API depends on StarkZap version
-        const sdk = starkzap as any
-        if (sdk?.connect) {
-          await sdk.connect(account)
-        }
-        setIsReady(true)
-        setError(null)
-      } catch (err) {
-        console.error('Failed to connect StarkZap:', err)
-        setError(err instanceof Error ? err.message : 'Failed to connect')
-        setIsReady(false)
-      }
+    if (status === 'connected' && account && address) {
+      setIsReady(true)
+      setError(null)
+    } else if (status === 'disconnected') {
+      setIsReady(false)
     }
-
-    connectStarkzap()
-  }, [starkzap, account])
+  }, [status, account, address])
 
   return (
-    <PhantomContext.Provider value={{ starkzap, isReady, error }}>
+    <PhantomContext.Provider value={{ isReady, error, account, address: address ?? null }}>
       {children}
     </PhantomContext.Provider>
   )
