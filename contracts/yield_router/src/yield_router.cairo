@@ -122,25 +122,32 @@ mod YieldRouter {
             let existing = self.positions.read(commitment);
             assert(existing.commitment == 0, 'Commitment exists');
 
+            // Validate strategy_id
+            assert(strategy_id <= 2, 'Invalid strategy');
+            
             let caller = get_caller_address();
             let strkbtc_addr = self.strkbtc_address.read();
             let strkbtc = IERC20Dispatcher { contract_address: strkbtc_addr };
 
-            // Transfer strkBTC from user to this contract
-            // Note: In production, user would need to approve first
-            // For now, we assume the caller has approved or is the router itself
-            strkbtc.transfer_from(caller, starknet::get_contract_address(), strkbtc_amount.into());
-
-            // Route to the appropriate strategy contract
+            // Check strategy contract exists
             let strategy_contract = self.strategy_contracts.read(strategy_id);
             assert(strategy_contract != Zeroable::zero(), 'Unknown strategy');
 
-            // Deposit into strategy (this reveals amount to the strategy contract)
-            // In STRK20 final implementation, this becomes a shielded deposit
+            // Check user has approved the router
+            let allowance = strkbtc.allowance(caller, starknet::get_contract_address());
+            assert(allowance >= strkbtc_amount.into(), 'Insufficient allowance');
+
+            // Transfer strkBTC from user to this contract FIRST (effects after)
+            let balance_before = strkbtc.balance_of(starknet::get_contract_address());
+            strkbtc.transfer_from(caller, starknet::get_contract_address(), strkbtc_amount.into());
+            let balance_after = strkbtc.balance_of(starknet::get_contract_address());
+            assert(balance_after == balance_before + strkbtc_amount.into(), 'Transfer failed');
+
+            // Route to the appropriate strategy contract
             let strategy = IStrategyDispatcher { contract_address: strategy_contract };
             let deposited = strategy.deposit(strkbtc_amount.into());
 
-            // Store private position
+            // Store private position AFTER external calls
             let strategy_enum = self._id_to_strategy(strategy_id);
             let position = PrivatePosition {
                 commitment,
@@ -176,6 +183,14 @@ mod YieldRouter {
             let mut position = self.positions.read(commitment);
             assert(position.is_active, 'Position not active');
 
+            // Validate strategy_id matches stored position
+            let stored_strategy_id = self._strategy_to_id(position.strategy);
+            assert(stored_strategy_id == strategy_id, 'Strategy mismatch');
+
+            // Validate amount against TVL to prevent underflow
+            let current_tvl = self.strategy_tvl.read(strategy_id);
+            assert(original_amount <= current_tvl, 'Amount exceeds TVL');
+
             let caller = get_caller_address();
 
             // Withdraw from strategy
@@ -193,7 +208,6 @@ mod YieldRouter {
             self.positions.write(commitment, position);
 
             // Update TVL
-            let current_tvl = self.strategy_tvl.read(strategy_id);
             self.strategy_tvl.write(strategy_id, current_tvl - original_amount);
 
             self.emit(PositionClosed {

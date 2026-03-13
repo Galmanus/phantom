@@ -133,18 +133,3 @@ version = "1.0.0"
 dependencies = [
  "openzeppelin",
 ]
-
-[[package]]
-name = "phantom_merkle"
-version = "1.0.0"
-
-[[package]]
-name = "phantom_pool"
-version = "1.0.0"
-dependencies = [
- "openzeppelin",
-]
-
-[[package]]
-name = "phantom_verifier"
-version = "1.0.0"
