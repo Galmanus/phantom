@@ -365,9 +365,12 @@ mod MidasPool {
 
         fn set_test_mode(ref self: ContractState, enabled: bool) {
             assert(get_caller_address() == self.owner.read(), 'Only owner');
+            // CRITICAL: Can only DISABLE test mode, never enable it
+            // This prevents malicious owner from bypassing proofs after deployment
+            assert(enabled == false, 'Cannot enable test mode - only disable');
             let old = self.test_mode.read();
-            self.test_mode.write(enabled);
-            self.emit(TestModeChanged { old_value: old, new_value: enabled });
+            self.test_mode.write(false);  // Always set to false
+            self.emit(TestModeChanged { old_value: old, new_value: false });
         }
 
         fn set_verifier(ref self: ContractState, verifier: ContractAddress) {
@@ -468,9 +471,13 @@ mod MidasPool {
             let current_length = self.root_history_length.read();
             let max = self.max_root_history.read();
             
+            // ALWAYS add to known_roots - critical for liveness
+            self.known_roots.write(root, true);
+            
             if current_length < max {
                 self.root_history_length.write(current_length + 1);
             }
+            // Note: When full, we stop incrementing but root is still stored
         }
     }
 }

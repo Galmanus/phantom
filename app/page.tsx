@@ -131,7 +131,7 @@ export default function Home() {
           <h2 className="font-display font-black text-4xl md:text-5xl text-parchment mb-4">
             Turn Your BTC Into <span className="text-amber">Private Gold</span><br/>
             The $130M BTC on Starknet<br/>
-            <span className="text-amber">has zero privacy today.</span><br/>
+            has zero privacy today.<br/>
             That changes now.
           </h2>
           <p className="text-lg text-secondary mb-10">Be among the first to shield your Bitcoin. No waitlist. Testnet live.</p>
