@@ -8,7 +8,7 @@ export function Footer() {
           <div>
             <div className="flex items-center gap-2 mb-4">
               <span className="text-amber">₿</span>
-              <span className="font-heading font-bold text-lg">PHANTOM</span>
+              <span className="font-heading font-bold text-lg">MIDAS</span>
             </div>
             <p className="text-sm text-muted">ZK Privacy for BTCFi</p>
           </div>
@@ -39,7 +39,7 @@ export function Footer() {
           </div>
         </div>
         <div className="mt-12 pt-8 border-t border-border text-center text-sm text-muted">
-          © 2026 PHANTOM Protocol. Built on Starknet.
+          © 2026 MIDAS Protocol. Built on Starknet.
         </div>
       </div>
     </footer>

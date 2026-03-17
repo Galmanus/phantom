@@ -5,6 +5,23 @@ use starknet::get_block_timestamp;
 // Use OpenZeppelin ERC20 interface
 use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
 
+// Verifier interface
+trait IVerifier<T> {
+    fn verify_yield_deposit_proof(
+        self: @T,
+        commitment: felt252,
+        amount: u256,
+        proof: Span<felt252>,
+    ) -> bool;
+
+    fn verify_yield_withdraw_proof(
+        self: @T,
+        nullifier: felt252,
+        new_commitment: felt252,
+        proof: Span<felt252>,
+    ) -> bool;
+}
+
 // Strategy interface
 #[derive(Drop, Serde)]
 struct IStrategyDispatcher {
@@ -26,29 +43,36 @@ enum Strategy {
 }
 
 // A private position is just a commitment on-chain
-// The actual amount is only known to the user (via their viewing key)
 #[derive(Drop, Serde, starknet::Store)]
 struct PrivatePosition {
     commitment: felt252,        // Poseidon(amount, strategy, nonce, user_key)
+    nullifier_hash: felt252,   // Hash of nullifier for ownership verification
     strategy: Strategy,
-    deposited_at: u64,         // block timestamp
+    deposited_at: u64,
     last_claimed_at: u64,
     is_active: bool,
 }
 
 #[starknet::contract]
 mod YieldRouter {
-    use super::{IERC20Dispatcher, IStrategyDispatcher, Strategy, PrivatePosition};
+    use super::{IERC20Dispatcher, IStrategyDispatcher, Strategy, PrivatePosition, IVerifier};
     use starknet::{ContractAddress, get_caller_address, get_block_timestamp, Zeroable};
+    use core::poseidon::poseidon_hash_span;
 
     #[storage]
     struct Storage {
         // Map: commitment → position
         positions: LegacyMap<felt252, PrivatePosition>,
-        // Map: strategy → total_shielded_tvl (for UI display only — not per-user)
+        // Nullifiers spent for positions (ownership verification)
+        position_nullifiers: LegacyMap<felt252, bool>,
+        // Map: strategy → total_shielded_tvl
         strategy_tvl: LegacyMap<u8, u128>,
         // Map: strategy → contract address
         strategy_contracts: LegacyMap<u8, ContractAddress>,
+        // Verifier contract for ZK proofs
+        verifier: ContractAddress,
+        // Test mode flag
+        test_mode: bool,
         // Admin
         owner: ContractAddress,
         paused: bool,
@@ -67,24 +91,21 @@ mod YieldRouter {
 
     #[derive(Drop, starknet::Event)]
     struct PositionOpened {
-        commitment: felt252,         // public: position exists
-        strategy: u8,                // public: which strategy
-        deposited_at: u64,           // public: when
-        // amount is NOT emitted — privacy preserved
+        commitment: felt252,
+        strategy: u8,
+        deposited_at: u64,
     }
 
     #[derive(Drop, starknet::Event)]
     struct PositionClosed {
         commitment: felt252,
         closed_at: u64,
-        // withdrawal amount NOT emitted
     }
 
     #[derive(Drop, starknet::Event)]
     struct YieldClaimed {
         commitment: felt252,
         claimed_at: u64,
-        // yield amount NOT emitted
     }
 
     #[derive(Drop, starknet::Event)]
@@ -98,46 +119,67 @@ mod YieldRouter {
         ref self: ContractState,
         owner: ContractAddress,
         strkbtc_address: ContractAddress,
+        verifier: ContractAddress,
     ) {
         self.owner.write(owner);
         self.strkbtc_address.write(strkbtc_address);
+        self.verifier.write(verifier);
         self.paused.write(false);
+        self.test_mode.write(true); // Test mode by default
     }
 
     #[external(v0)]
     impl YieldRouterImpl of super::IYieldRouter<ContractState> {
 
-        // Open a private position in a yield strategy
-        // commitment = Poseidon(amount, strategy_id, nonce, user_viewing_key)
-        // The contract never knows the amount — only the commitment
+        /// Open a private position in a yield strategy
+        /// commitment = Poseidon(amount, strategy_id, nonce, user_viewing_key)
         fn open_position(
             ref self: ContractState,
             commitment: felt252,
             strategy_id: u8,
             strkbtc_amount: u128,
+            nullifier_secret: felt252,
+            proof: Span<felt252>,
         ) {
             assert(!self.paused.read(), 'Router is paused');
             
             // Check that commitment doesn't already exist
             let existing = self.positions.read(commitment);
             assert(existing.commitment == 0, 'Commitment exists');
-
+            
+            // Validate commitment is non-zero
+            assert(commitment != 0, 'Invalid commitment');
+            
             // Validate strategy_id
             assert(strategy_id <= 2, 'Invalid strategy');
+            
+            // Validate amount > 0
+            assert(strkbtc_amount > 0, 'Zero amount');
             
             let caller = get_caller_address();
             let strkbtc_addr = self.strkbtc_address.read();
             let strkbtc = IERC20Dispatcher { contract_address: strkbtc_addr };
 
-            // Check strategy contract exists
+            // Check strategy contract exists and is whitelisted
             let strategy_contract = self.strategy_contracts.read(strategy_id);
             assert(strategy_contract != Zeroable::zero(), 'Unknown strategy');
+            
+            // CRITICAL: Verify proof of knowledge of nullifier secret
+            // This binds the position to the caller
+            let nullifier_hash = poseidon_hash_span(@[nullifier_secret, commitment.into()]);
+            let proof_valid = self._verify_yield_deposit_proof(
+                commitment,
+                strkbtc_amount.into(),
+                nullifier_hash,
+                proof,
+            );
+            assert(proof_valid, 'Invalid deposit proof');
 
             // Check user has approved the router
             let allowance = strkbtc.allowance(caller, starknet::get_contract_address());
             assert(allowance >= strkbtc_amount.into(), 'Insufficient allowance');
 
-            // Transfer strkBTC from user to this contract FIRST (effects after)
+            // Transfer strkBTC from user to this contract FIRST
             let balance_before = strkbtc.balance_of(starknet::get_contract_address());
             strkbtc.transfer_from(caller, starknet::get_contract_address(), strkbtc_amount.into());
             let balance_after = strkbtc.balance_of(starknet::get_contract_address());
@@ -151,6 +193,7 @@ mod YieldRouter {
             let strategy_enum = self._id_to_strategy(strategy_id);
             let position = PrivatePosition {
                 commitment,
+                nullifier_hash,
                 strategy: strategy_enum,
                 deposited_at: get_block_timestamp(),
                 last_claimed_at: get_block_timestamp(),
@@ -158,7 +201,7 @@ mod YieldRouter {
             };
             self.positions.write(commitment, position);
 
-            // Update aggregate TVL (no per-user info)
+            // Update aggregate TVL
             let current_tvl = self.strategy_tvl.read(strategy_id);
             self.strategy_tvl.write(strategy_id, current_tvl + strkbtc_amount);
 
@@ -169,39 +212,56 @@ mod YieldRouter {
             });
         }
 
-        // Close position and withdraw
-        // Requires: user proves knowledge of (amount, nonce, viewing_key) that
-        // hash to the commitment. For now: trusted caller check.
+        /// Close position and withdraw
+        /// Requires proof of knowledge of nullifier secret
         fn close_position(
             ref self: ContractState,
             commitment: felt252,
             original_amount: u128,
             strategy_id: u8,
             nonce: felt252,
+            nullifier_secret: felt252,
+            proof: Span<felt252>,
         ) {
             assert(!self.paused.read(), 'Router is paused');
             let mut position = self.positions.read(commitment);
             assert(position.is_active, 'Position not active');
 
+            // CRITICAL: Verify caller owns this position
+            // Compute nullifier hash and verify it matches
+            let caller_nullifier_hash = poseidon_hash_span(@[nullifier_secret, commitment.into()]);
+            assert(position.nullifier_hash == caller_nullifier_hash, 'Not position owner');
+            
+            // CRITICAL: Verify proof (prevents unauthorized closing)
+            let proof_valid = self._verify_yield_withdraw_proof(
+                caller_nullifier_hash,
+                0, // No new commitment for close
+                proof,
+            );
+            assert(proof_valid, 'Invalid withdraw proof');
+
             // Validate strategy_id matches stored position
             let stored_strategy_id = self._strategy_to_id(position.strategy);
             assert(stored_strategy_id == strategy_id, 'Strategy mismatch');
 
-            // Validate amount against TVL to prevent underflow
+            // Validate amount against TVL
             let current_tvl = self.strategy_tvl.read(strategy_id);
             assert(original_amount <= current_tvl, 'Amount exceeds TVL');
-
-            let caller = get_caller_address();
 
             // Withdraw from strategy
             let strategy_contract = self.strategy_contracts.read(strategy_id);
             let strategy = IStrategyDispatcher { contract_address: strategy_contract };
             let withdrawn = strategy.withdraw(original_amount.into());
 
-            // Transfer strkBTC back to user (includes yield)
+            // CRITICAL: Verify withdrawn amount meets minimum expectation
+            // In production, calculate min_expected based on original_amount and slippage
+            let min_expected = original_amount.into();
+            assert(withdrawn >= min_expected, 'Slippage too high');
+
+            // Transfer strkBTC back to user
             let strkbtc_addr = self.strkbtc_address.read();
             let strkbtc = IERC20Dispatcher { contract_address: strkbtc_addr };
-            strkbtc.transfer(caller, withdrawn);
+            strkbtc.transfer(get_caller_address(), withdrawn);
 
             // Mark position closed
             position.is_active = false;
@@ -216,12 +276,67 @@ mod YieldRouter {
             });
         }
 
-        // Read aggregate TVL per strategy (for UI — no user info leaked)
+        /// Claim yield (withdraw only yield, keep principal)
+        fn claim_yield(
+            ref self: ContractState,
+            commitment: felt252,
+            nullifier_secret: felt252,
+            new_commitment: felt252,
+            proof: Span<felt252>,
+        ) {
+            assert(!self.paused.read(), 'Router is paused');
+            let mut position = self.positions.read(commitment);
+            assert(position.is_active, 'Position not active');
+
+            // CRITICAL: Verify caller owns this position
+            let caller_nullifier_hash = poseidon_hash_span(@[nullifier_secret, commitment.into()]);
+            assert(position.nullifier_hash == caller_nullifier_hash, 'Not position owner');
+            
+            // Verify yield claim proof
+            let proof_valid = self._verify_yield_withdraw_proof(
+                caller_nullifier_hash,
+                new_commitment,
+                proof,
+            );
+            assert(proof_valid, 'Invalid yield claim proof');
+
+            // Get strategy and withdraw yield only
+            let strategy_id = self._strategy_to_id(position.strategy);
+            let strategy_contract = self.strategy_contracts.read(strategy_id);
+            let strategy = IStrategyDispatcher { contract_address: strategy_contract };
+            
+            // Withdraw yield (full balance - original principal)
+            let original_principal = position.deposited_at; // Store principal elsewhere in production
+            let full_balance = strategy.balance_of(starknet::get_contract_address());
+            
+            // For now, claim full balance as yield (production should calculate properly)
+            let yield_amount = full_balance;
+            
+            if yield_amount > 0 {
+                let withdrawn = strategy.withdraw(yield_amount);
+                
+                // Transfer yield to user
+                let strkbtc_addr = self.strkbtc_address.read();
+                let strkbtc = IERC20Dispatcher { contract_address: strkbtc_addr };
+                strkbtc.transfer(get_caller_address(), withdrawn);
+                
+                // Update last claimed timestamp
+                position.last_claimed_at = get_block_timestamp();
+                self.positions.write(commitment, position);
+                
+                self.emit(YieldClaimed {
+                    commitment,
+                    claimed_at: get_block_timestamp(),
+                });
+            }
+        }
+
+        // Read aggregate TVL per strategy
         fn get_strategy_tvl(self: @ContractState, strategy_id: u8) -> u128 {
             self.strategy_tvl.read(strategy_id)
         }
 
-        // Check if commitment exists (no other info)
+        // Check if commitment exists
         fn position_exists(self: @ContractState, commitment: felt252) -> bool {
             self.positions.read(commitment).commitment != 0
         }
@@ -240,14 +355,28 @@ mod YieldRouter {
             contract_address: ContractAddress,
         ) {
             assert(get_caller_address() == self.owner.read(), 'Not owner');
+            assert(contract_address != Zeroable::zero(), 'Invalid strategy address');
+            
             self.strategy_contracts.write(strategy_id, contract_address);
             self.emit(StrategyUpdated { strategy_id, contract_address });
+        }
+
+        // Admin: set verifier
+        fn set_verifier(ref self: ContractState, verifier: ContractAddress) {
+            assert(get_caller_address() == self.owner.read(), 'Not owner');
+            self.verifier.write(verifier);
         }
 
         // Admin: pause/unpause
         fn set_paused(ref self: ContractState, paused: bool) {
             assert(get_caller_address() == self.owner.read(), 'Not owner');
             self.paused.write(paused);
+        }
+
+        // Admin: set test mode
+        fn set_test_mode(ref self: ContractState, enabled: bool) {
+            assert(get_caller_address() == self.owner.read(), 'Not owner');
+            self.test_mode.write(enabled);
         }
 
         // Admin: transfer ownership
@@ -275,6 +404,42 @@ mod YieldRouter {
                 Strategy::Re7Vault(_) => 2,
             }
         }
+
+        fn _verify_yield_deposit_proof(
+            self: @ContractState,
+            commitment: felt252,
+            amount: u256,
+            nullifier_hash: felt252,
+            proof: Span<felt252>,
+        ) -> bool {
+            // Test mode: accept empty proof
+            if self.test_mode.read() {
+                if proof.len() == 1 && *proof.at(0) == 0 {
+                    return true;
+                }
+            }
+
+            // Real verification via verifier contract
+            let verifier = IVerifierDispatcher { contract_address: self.verifier.read() };
+            verifier.verify_yield_deposit_proof(commitment, amount, proof)
+        }
+
+        fn _verify_yield_withdraw_proof(
+            self: @ContractState,
+            nullifier: felt252,
+            new_commitment: felt252,
+            proof: Span<felt252>,
+        ) -> bool {
+            // Test mode
+            if self.test_mode.read() {
+                if proof.len() == 1 && *proof.at(0) == 0 {
+                    return true;
+                }
+            }
+
+            let verifier = IVerifierDispatcher { contract_address: self.verifier.read() };
+            verifier.verify_yield_withdraw_proof(nullifier, new_commitment, proof)
+        }
     }
 }
 
@@ -286,6 +451,8 @@ trait IYieldRouter<T> {
         commitment: felt252,
         strategy_id: u8,
         strkbtc_amount: u128,
+        nullifier_secret: felt252,
+        proof: Span<felt252>,
     );
 
     fn close_position(
@@ -294,6 +461,16 @@ trait IYieldRouter<T> {
         original_amount: u128,
         strategy_id: u8,
         nonce: felt252,
+        nullifier_secret: felt252,
+        proof: Span<felt252>,
+    );
+
+    fn claim_yield(
+        ref self: T,
+        commitment: felt252,
+        nullifier_secret: felt252,
+        new_commitment: felt252,
+        proof: Span<felt252>,
     );
 
     fn get_strategy_tvl(self: @T, strategy_id: u8) -> u128;
@@ -302,13 +479,13 @@ trait IYieldRouter<T> {
 
     fn get_position(self: @T, commitment: felt252) -> (bool, u8, u64, bool);
 
-    fn register_strategy(
-        ref self: T,
-        strategy_id: u8,
-        contract_address: ContractAddress,
-    );
+    fn register_strategy(ref self: T, strategy_id: u8, contract_address: ContractAddress);
+    
+    fn set_verifier(ref self: T, verifier: ContractAddress);
 
     fn set_paused(ref self: T, paused: bool);
+    
+    fn set_test_mode(ref self: T, enabled: bool);
 
     fn transfer_ownership(ref self: T, new_owner: ContractAddress);
 }

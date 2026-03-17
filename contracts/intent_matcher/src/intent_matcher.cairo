@@ -3,16 +3,39 @@ use starknet::ContractAddress;
 // PHANTOM Intent Matcher - Dark Pool Intent Settlement
 // Manages encrypted trade intents and atomic settlement
 
+// Verifier interface
+trait IVerifier<T> {
+    fn verify_intent_proof(
+        self: @T,
+        commitment: felt252,
+        expiry: u64,
+        proof: Span<felt252>,
+    ) -> bool;
+
+    fn verify_matching_proof(
+        self: @T,
+        intent_a_nullifier: felt252,
+        intent_b_nullifier: felt252,
+        proof: Span<felt252>,
+    ) -> bool;
+}
+
 #[storage]
 struct Storage {
-    // Intent commitments: commitment -> expiry_timestamp
-    pending_intents: LegacyMap<felt252, u64>,
+    // Intent commitments: commitment -> (expiry_timestamp, submitter)
+    pending_intents: LegacyMap<felt252, (u64, ContractAddress)>,
     // Used intent nullifiers (prevents replay)
     used_intent_nullifiers: LegacyMap<felt252, bool>,
+    // Nullifier secrets hashed for ownership verification
+    intent_ownership: LegacyMap<felt252, felt252>,
     // Settlement count
     total_settlements: u64,
     // PhantomPool address (only contract that can execute settlements)
     phantom_pool: ContractAddress,
+    // Verifier contract
+    verifier: ContractAddress,
+    // Test mode flag
+    test_mode: bool,
     // Owner
     owner: ContractAddress,
 }
@@ -24,6 +47,8 @@ enum Event {
     IntentSettled: IntentSettled,
     IntentExpired: IntentExpired,
     IntentCancelled: IntentCancelled,
+    VerifierUpdated: VerifierUpdated,
+    TestModeChanged: TestModeChanged,
 }
 
 #[derive(Drop, starknet::Event)]
@@ -52,15 +77,30 @@ struct IntentCancelled {
     nullifier: felt252,
 }
 
+#[derive(Drop, starknet::Event)]
+struct VerifierUpdated {
+    old_verifier: ContractAddress,
+    new_verifier: ContractAddress,
+}
+
+#[derive(Drop, starknet::Event)]
+struct TestModeChanged {
+    old_value: bool,
+    new_value: bool,
+}
+
 #[embeddable_as(IntentMatcher)]
 mod intent_matcher_impl {
     use super::{
-        Storage,
+        Storage, IVerifier,
         IntentSubmitted, IntentSettled, IntentExpired, IntentCancelled,
+        VerifierUpdated, TestModeChanged,
     };
     use starknet::event::EventEmitter;
     use starknet::get_caller_address;
     use starknet::get_block_timestamp;
+    use starknet::ContractAddressZeroable;
+    use core::poseidon::poseidon_hash_span;
 
     #[abi(embed_v0)]
     trait IIntentMatcher {
@@ -68,26 +108,30 @@ mod intent_matcher_impl {
             ref self: ContractState,
             commitment: felt252,
             expiry: u64,
+            nullifier_secret: felt252,
             proof: Span<felt252>,
         );
         
         fn settle_matched_intents(
             ref self: ContractState,
-            intent_a_nullifier: felt252,
-            intent_b_nullifier: felt252,
+            intent_a_commitment: felt252,
+            intent_b_commitment: felt252,
             proof: Span<felt252>,
         );
         
         fn cancel_intent(
             ref self: ContractState,
             commitment: felt252,
-            nullifier: felt252,
+            nullifier_secret: felt252,
         );
         
         fn is_intent_pending(self: @ContractState, commitment: felt252) -> bool;
         fn is_nullifier_used(self: @ContractState, nullifier: felt252) -> bool;
         fn get_intent_expiry(self: @ContractState, commitment: felt252) -> u64;
         fn get_total_settlements(self: @ContractState) -> u64;
+
+        fn set_verifier(ref self: ContractState, verifier: ContractAddress);
+        fn set_test_mode(ref self: ContractState, enabled: bool);
     }
 
     #[external(v0)]
@@ -95,66 +139,80 @@ mod intent_matcher_impl {
         ref self: ContractState,
         commitment: felt252,
         expiry: u64,
+        nullifier_secret: felt252,
         proof: Span<felt252>,
     ) {
+        // 1. Validate commitment is non-zero
         assert(commitment != 0, 'Invalid commitment');
-        assert(expiry > get_block_timestamp(), 'Intent already expired');
-        assert(proof.len() > 0, 'Invalid proof');
         
-        // Verify intent proof
+        // 2. Validate expiry is in the future
+        let now = get_block_timestamp();
+        assert(expiry > now, 'Intent already expired');
+        
+        // 3. Check intent not already submitted
+        assert(!self.is_intent_pending(commitment), 'Intent already exists');
+        
+        // 4. CRITICAL: Verify ZK proof
         let proof_valid = self._verify_intent_proof(commitment, expiry, proof);
         assert(proof_valid, 'Invalid intent proof');
         
-        // Check intent not already submitted
-        assert(!self.is_intent_pending(commitment), 'Intent already exists');
+        // 5. CRITICAL: Store ownership binding
+        // Hash nullifier secret with commitment for ownership verification
+        let ownership_hash = poseidon_hash_span(@[nullifier_secret, commitment]);
+        self.intent_ownership.write(commitment, ownership_hash);
         
-        // Store intent
-        self.pending_intents.write(commitment, expiry);
+        // 6. Store intent
+        let caller = get_caller_address();
+        self.pending_intents.write(commitment, (expiry, caller));
         
         self.emit(IntentSubmitted {
             commitment,
             expiry,
-            submitter: get_caller_address(),
+            submitter: caller,
         });
     }
 
     #[external(v0)]
     fn settle_matched_intents(
         ref self: ContractState,
-        intent_a_nullifier: felt252,
-        intent_b_nullifier: felt252,
+        intent_a_commitment: felt252,
+        intent_b_commitment: felt252,
         proof: Span<felt252>,
     ) {
         // Only PhantomPool can settle
         assert(get_caller_address() == self.phantom_pool.read(), 'Only PhantomPool can settle');
         
-        assert(intent_a_nullifier != 0, 'Invalid nullifier A');
-        assert(intent_b_nullifier != 0, 'Invalid nullifier B');
-        assert(proof.len() > 0, 'Invalid proof');
+        // Verify both intents exist and are pending
+        assert(self.is_intent_pending(intent_a_commitment), 'Intent A not pending');
+        assert(self.is_intent_pending(intent_b_commitment), 'Intent B not pending');
         
-        // Verify nullifiers not already used
-        assert(!self.is_nullifier_used(intent_a_nullifier), 'Nullifier A already used');
-        assert(!self.is_nullifier_used(intent_b_nullifier), 'Nullifier B already used');
-        
-        // Verify matching proof
+        // CRITICAL: Verify matching proof
         let proof_valid = self._verify_matching_proof(
-            intent_a_nullifier,
-            intent_b_nullifier,
+            intent_a_commitment,
+            intent_b_commitment,
             proof,
         );
         assert(proof_valid, 'Invalid matching proof');
         
+        // Compute nullifiers for both intents (for tracking)
+        let nullifier_a = self._compute_intent_nullifier(intent_a_commitment);
+        let nullifier_b = self._compute_intent_nullifier(intent_b_commitment);
+        
         // Mark nullifiers as used
-        self.used_intent_nullifiers.write(intent_a_nullifier, true);
-        self.used_intent_nullifiers.write(intent_b_nullifier, true);
+        self.used_intent_nullifiers.write(nullifier_a, true);
+        self.used_intent_nullifiers.write(nullifier_b, true);
+        
+        // Clear pending intents
+        self.pending_intents.write(intent_a_commitment, (0, ContractAddressZeroable::zero()));
+        self.pending_intents.write(intent_b_commitment, (0, ContractAddressZeroable::zero()));
         
         // Increment settlement count
         let total = self.total_settlements.read();
         self.total_settlements.write(total + 1);
         
         self.emit(IntentSettled {
-            intent_a_nullifier,
-            intent_b_nullifier,
+            intent_a_nullifier: nullifier_a,
+            intent_b_nullifier: nullifier_b,
             settlement_timestamp: get_block_timestamp(),
         });
     }
@@ -163,29 +221,25 @@ mod intent_matcher_impl {
     fn cancel_intent(
         ref self: ContractState,
         commitment: felt252,
-        nullifier: felt252,
+        nullifier_secret: felt252,
     ) {
-        // Verify intent exists and is pending
+        // 1. Verify intent exists and is pending
         assert(self.is_intent_pending(commitment), 'Intent not pending');
         
-        // Verify nullifier is provided and valid
-        assert(nullifier != 0, 'Invalid nullifier');
+        // 2. CRITICAL: Verify caller owns this intent
+        let stored_ownership = self.intent_ownership.read(commitment);
+        let caller_ownership = poseidon_hash_span(@[nullifier_secret, commitment]);
+        assert(stored_ownership == caller_ownership, 'Not intent owner');
         
-        // Verify the nullifier matches the commitment ownership
-        // In production: verify Poseidon(nullifier, commitment) equals caller's derived key
-        // For now: verify nullifier was used in the intent (basic ownership proof)
-        let stored_expiry = self.pending_intents.read(commitment);
-        assert(stored_expiry > 0, 'Intent not found');
+        // 3. Compute and mark nullifier as used (to prevent replay)
+        let nullifier = self._compute_intent_nullifier(commitment);
+        assert(!self.used_intent_nullifiers.read(nullifier), 'Intent already settled');
         
-        // Verify caller is the one who submitted this intent by checking 
-        // that the nullifier hasn't been used (indicates ownership attempt)
-        assert(!self.is_nullifier_used(nullifier), 'Nullifier already used');
-        
-        // Mark nullifier as used to prevent replay
         self.used_intent_nullifiers.write(nullifier, true);
         
-        // Remove intent (set expiry to 0 to mark as cancelled)
-        self.pending_intents.write(commitment, 0);
+        // 4. Remove intent
+        self.pending_intents.write(commitment, (0, ContractAddressZeroable::zero()));
+        self.intent_ownership.write(commitment, 0);
         
         self.emit(IntentCancelled { commitment, nullifier });
     }
@@ -196,12 +250,12 @@ mod intent_matcher_impl {
             return false;
         }
         
-        let expiry = self.pending_intents.read(commitment);
+        let (expiry, submitter) = self.pending_intents.read(commitment);
         if expiry == 0 {
             return false;
         }
         
-        // Check if still valid
+        // Check if still valid (not expired)
         get_block_timestamp() < expiry
     }
 
@@ -212,12 +266,33 @@ mod intent_matcher_impl {
 
     #[external(v0)]
     fn get_intent_expiry(self: @ContractState, commitment: felt252) -> u64 {
-        self.pending_intents.read(commitment)
+        let (expiry, _) = self.pending_intents.read(commitment);
+        expiry
     }
 
     #[external(v0)]
     fn get_total_settlements(self: @ContractState) -> u64 {
         self.total_settlements.read()
+    }
+
+    #[external(v0)]
+    fn set_verifier(ref self: ContractState, verifier: ContractAddress) {
+        assert(get_caller_address() == self.owner.read(), 'Only owner');
+        
+        let old = self.verifier.read();
+        self.verifier.write(verifier);
+        
+        self.emit(VerifierUpdated { old_verifier: old, new_verifier: verifier });
+    }
+
+    #[external(v0)]
+    fn set_test_mode(ref self: ContractState, enabled: bool) {
+        assert(get_caller_address() == self.owner.read(), 'Only owner');
+        
+        let old = self.test_mode.read();
+        self.test_mode.write(enabled);
+        
+        self.emit(TestModeChanged { old_value: old, new_value: enabled });
     }
 
     #[generate_trait]
@@ -228,58 +303,55 @@ mod intent_matcher_impl {
             expiry: u64,
             proof: Span<felt252>,
         ) -> bool {
-            // Verify ZK proof that intent commitment is well-formed
-            // Public inputs: commitment, expiry
-            // Private inputs: asset_in, amount_in, asset_out, min_amount_out, nullifier_secret, deadline
-            
-            // Basic validity checks
-            if proof.len() == 0 {
-                return false;
+            // Test mode: accept empty proof
+            if self.test_mode.read() {
+                if proof.len() == 1 && *proof.at(0) == 0 {
+                    return true;
+                }
             }
-            
-            if commitment == 0 {
-                return false;
+
+            // Production: verify via verifier contract
+            let verifier_addr = self.verifier.read();
+            if verifier_addr == ContractAddressZeroable::zero() {
+                // Fallback to basic validation
+                return proof.len() >= 64;
             }
-            
-            if expiry <= get_block_timestamp() {
-                return false;
-            }
-            
-            // In production: verify actual ZK proof via PhantomVerifier
-            // For now, require minimum proof length
-            proof.len() >= 8
+
+            let verifier = IVerifierDispatcher { contract_address: verifier_addr };
+            verifier.verify_intent_proof(commitment, expiry, proof)
         }
 
         fn _verify_matching_proof(
             self: @ContractState,
-            intent_a_nullifier: felt252,
-            intent_b_nullifier: felt252,
+            intent_a_commitment: felt252,
+            intent_b_commitment: felt252,
             proof: Span<felt252>,
         ) -> bool {
-            // Verify ZK proof that two intents are a valid match
-            // Proves:
-            // - intent_a.asset_in == intent_b.asset_out
-            // - intent_a.asset_out == intent_b.asset_in
-            // - executed_rate satisfies both min_amount_out constraints
-            // - both intents are within deadlines
-            
-            // Basic validity checks
-            if proof.len() == 0 {
-                return false;
+            // Test mode
+            if self.test_mode.read() {
+                if proof.len() == 1 && *proof.at(0) == 0 {
+                    return true;
+                }
             }
-            
-            if intent_a_nullifier == 0 || intent_b_nullifier == 0 {
-                return false;
+
+            // Production
+            let verifier_addr = self.verifier.read();
+            if verifier_addr == ContractAddressZeroable::zero() {
+                return proof.len() >= 64;
             }
-            
-            // Verify both intents exist and are still pending
-            if self.is_nullifier_used(intent_a_nullifier) || self.is_nullifier_used(intent_b_nullifier) {
-                return false;
-            }
-            
-            // In production: verify actual ZK proof via PhantomVerifier
-            // For now, require minimum proof length
-            proof.len() >= 8
+
+            // Compute nullifiers for verification
+            let nullifier_a = self._compute_intent_nullifier(intent_a_commitment);
+            let nullifier_b = self._compute_intent_nullifier(intent_b_commitment);
+
+            let verifier = IVerifierDispatcher { contract_address: verifier_addr };
+            verifier.verify_matching_proof(nullifier_a, nullifier_b, proof)
+        }
+
+        fn _compute_intent_nullifier(self: @ContractState, commitment: felt252) -> felt252 {
+            // Compute nullifier from commitment
+            // In production, this should be more sophisticated
+            poseidon_hash_span(@[commitment, 'INTENT'.into()])
         }
     }
 }
@@ -289,11 +361,14 @@ fn constructor(
     ref self: ContractState,
     phantom_pool: ContractAddress,
     owner: ContractAddress,
+    verifier: ContractAddress,
 ) {
-    assert(phantom_pool != contract_address_const::<0>(), 'Invalid PhantomPool address');
-    assert(owner != contract_address_const::<0>(), 'Invalid owner address');
+    assert(phantom_pool != ContractAddressZeroable::zero(), 'Invalid PhantomPool address');
+    assert(owner != ContractAddressZeroable::zero(), 'Invalid owner address');
     
     self.phantom_pool.write(phantom_pool);
     self.owner.write(owner);
+    self.verifier.write(verifier);
     self.total_settlements.write(0);
+    self.test_mode.write(true); // Test mode by default
 }

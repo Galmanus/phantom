@@ -33,12 +33,16 @@ export interface UsePhantomSDKResult {
   unshield: (note: ShieldedNote, recipient: string, amount: bigint, onProgress?: (step: string, message: string) => void) => Promise<string>
   /** Get all shielded notes */
   getNotes: () => Promise<ShieldedNote[]>
+  /** Get unspent shielded notes */
+  getUnspentNotes: () => Promise<ShieldedNote[]>
+  /** Get active yield positions */
+  getActiveYieldPositions: () => Promise<YieldPosition[]>
   /** Get shielded balance for asset */
   getShieldedBalance: (assetId: number) => Promise<bigint>
   /** Execute private swap */
   privateSwap: (inputNote: ShieldedNote, outputAsset: string, minOutput: bigint) => Promise<IntentReceipt>
   /** Deposit to yield protocol */
-  depositYield: (note: ShieldedNote, protocolId: number) => Promise<YieldPosition>
+  depositYield: (note: ShieldedNote, protocol: 'vesu' | 'uncap' | 'opus', onProgress?: (step: string, message: string) => void) => Promise<YieldPosition>
   /** Withdraw from yield */
   withdrawYield: (position: YieldPosition) => Promise<{ txHash: string }>
   /** Generate compliance proof */
@@ -140,6 +144,22 @@ export function usePhantomSDK(options: UsePhantomSDKOptions = {}): UsePhantomSDK
     return notes
   }, [sdk, isReady])
 
+  // Get active yield positions
+  const getActiveYieldPositions = useCallback(async (): Promise<YieldPosition[]> => {
+    if (!sdk || !isReady) {
+      return []
+    }
+    return sdk.getActiveYieldPositions()
+  }, [sdk, isReady])
+
+  // Get unspent notes
+  const getUnspentNotes = useCallback(async (): Promise<ShieldedNote[]> => {
+    if (!sdk || !isReady) {
+      return []
+    }
+    return sdk.getUnspentNotes()
+  }, [sdk, isReady])
+
   // Get shielded balance
   const getShieldedBalance = useCallback(async (assetId: number): Promise<bigint> => {
     const notes = await getNotes()
@@ -157,13 +177,24 @@ export function usePhantomSDK(options: UsePhantomSDKOptions = {}): UsePhantomSDK
     throw new Error('Private swap not yet implemented')
   }, [])
 
-  // Deposit yield - placeholder
+  // Deposit to yield protocol
   const depositYield = useCallback(async (
-    _note: ShieldedNote,
-    _protocolId: number
+    note: ShieldedNote,
+    protocol: 'vesu' | 'uncap' | 'opus',
+    onProgress?: (step: string, message: string) => void
   ): Promise<YieldPosition> => {
-    throw new Error('Yield not yet implemented')
-  }, [])
+    if (!sdk || !isReady) {
+      throw new Error('SDK not ready')
+    }
+    
+    setIsLoading(true)
+    try {
+      const position = await sdk.depositShieldedYield({ note, protocol, onProgress })
+      return position
+    } finally {
+      setIsLoading(false)
+    }
+  }, [sdk, isReady])
 
   // Withdraw yield - placeholder
   const withdrawYield = useCallback(async (_position: YieldPosition): Promise<{ txHash: string }> => {
@@ -185,6 +216,8 @@ export function usePhantomSDK(options: UsePhantomSDKOptions = {}): UsePhantomSDK
     shield,
     unshield,
     getNotes,
+    getUnspentNotes,
+    getActiveYieldPositions,
     getShieldedBalance,
     privateSwap,
     depositYield,
@@ -198,6 +231,8 @@ export function usePhantomSDK(options: UsePhantomSDKOptions = {}): UsePhantomSDK
     shield,
     unshield,
     getNotes,
+    getUnspentNotes,
+    getActiveYieldPositions,
     getShieldedBalance,
     privateSwap,
     depositYield,

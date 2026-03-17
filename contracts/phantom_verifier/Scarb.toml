@@ -1,0 +1,11 @@
+[package]
+name = "phantom_verifier"
+version = "0.1.0"
+edition = "2024_07"
+
+[dependencies]
+starknet = "2.0.0"
+
+[lib]
+sierra = true
+casm = true

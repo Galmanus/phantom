@@ -9,7 +9,7 @@ import { WalletSyncMount } from '@/components/layout/WalletSyncMount'
 import { WrongNetworkBanner } from '@/components/wallet/WrongNetworkBanner'
 
 export const metadata: Metadata = {
-  title: 'PHANTOM | ZK Private Execution Layer for BTCFi',
+  title: 'MIDAS | Private BTC Yield',
   description: 'Shield your Bitcoin with zero-knowledge proofs. The first ZK private execution layer for BTCFi on Starknet.',
 }
 

@@ -165,7 +165,7 @@ function WalletSelectionModal({
           </div>
         )}
         <p className="text-xs text-muted mt-4 text-center">
-          By connecting, you agree that PHANTOM never sees your private keys.
+          By connecting, you agree that MIDAS never sees your private keys.
         </p>
       </div>
     </div>

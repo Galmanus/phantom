@@ -1,0 +1,12 @@
+[package]
+name = "midas_pool"
+version = "0.1.0"
+edition = "2024_07"
+
+[dependencies]
+starknet = "2.0.0"
+openzeppelin = "0.22.0"
+
+[lib]
+sierra = true
+casm = true

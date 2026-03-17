@@ -21,7 +21,7 @@ export default function Home() {
                 WORKS. PRIVATELY.
               </h1>
               <p className="text-lg text-secondary max-w-md mb-8">
-                The first Private BTC Yield Manager on Starknet. Deposit strkBTC into yield strategies — your position, amount, and returns stay private. Powered by STRK20.
+                Turn Your BTC Into <span className="text-amber">Private Gold</span>. The first Private Liquid Staking on Starknet. Deposit BTC into staking — your position, amount, and rewards stay private.
               </p>
               <div className="flex gap-4 mb-8">
                 <Link href="/yield" className="btn-primary">▶ Start Earning</Link>
@@ -56,7 +56,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
             {[
-              { value: '3-8%', label: 'Yield on strkBTC' },
+              { value: '4-8%', label: 'Liquid Staking APY' },
               { value: '100%', label: 'Private positions' },
               { value: 'STRK20', label: 'Native privacy' },
               { value: '0', label: 'Public trace' },
@@ -74,12 +74,12 @@ export default function Home() {
       <section className="py-28">
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center mb-16">
-            <h2 className="font-display font-black text-4xl md:text-5xl text-parchment mb-4">What PHANTOM does</h2>
-            <p className="text-lg text-secondary max-w-2xl mx-auto">Deposit strkBTC into yield strategies. Your position and returns stay private.</p>
+            <h2 className="font-display font-black text-4xl md:text-5xl text-parchment mb-4">What MIDAS does</h2>
+            <p className="text-lg text-secondary max-w-2xl mx-auto">Private Liquid Staking. Deposit BTC into staking strategies. Your position and rewards stay private.</p>
           </div>
           <div className="grid md:grid-cols-2 gap-px bg-border rounded-2xl overflow-hidden">
             {[
-              { title: 'Private Yield', desc: 'Deposit strkBTC into Vesu, Ekubo, or Re7. Earn yield while your position stays hidden.', tags: ['Vesu', 'Ekubo', 'Re7'] },
+              { title: 'Private Liquid Staking', desc: 'Stake BTC with full privacy. Your validator rewards stay hidden while earning yield.', tags: ['Vesu', 'Ekubo', 'Re7'] },
               { title: 'Shielded BTC', desc: 'strkBTC brings BTC to Starknet with optional privacy. Your balance stays confidential.', tags: ['strkBTC', 'STRK20'] },
               { title: 'Gasless UX', desc: 'Starkzap handles gas fees. No STRK needed to start earning.', tags: ['Starkzap', 'AVNU'] },
               { title: 'Compliance Ready', desc: 'Selective disclosure for audits. Prove your holdings without revealing to the world.', tags: ['Viewing Keys', 'Audit'] },
@@ -103,11 +103,11 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center mb-16">
             <h2 className="font-display font-black text-4xl md:text-5xl text-parchment mb-4">Private BTC Yield</h2>
-            <p className="text-lg text-secondary max-w-2xl mx-auto">The blockchain is transparent. PHANTOM adds privacy.</p>
+            <p className="text-lg text-secondary max-w-2xl mx-auto">The blockchain is transparent. MIDAS adds privacy.</p>
           </div>
           <div className="grid md:grid-cols-3 gap-8">
             {[
-              { step: 1, title: 'Deposit', desc: 'Send strkBTC to PHANTOM. A private commitment is created — your amount is hidden.', tech: 'STRK20 · Poseidon commitment' },
+              { step: 1, title: 'Deposit', desc: 'Send strkBTC to MIDAS. A private commitment is created — your amount is hidden.', tech: 'STRK20 · Poseidon commitment' },
               { step: 2, title: 'Earn', desc: 'Your BTC works in yield strategies. No one can see your position or returns.', tech: 'Vesu · Ekubo · Re7' },
               { step: 3, title: 'Withdraw', desc: 'Exit anytime. Your withdrawal has no link to your original deposit.', tech: 'Privacy preserved · Zero trace' },
             ].map((s, i) => (
@@ -129,12 +129,13 @@ export default function Home() {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,var(--amber-glow)_0%,transparent_70%)] pointer-events-none"></div>
         <div className="max-w-4xl mx-auto px-6 text-center relative">
           <h2 className="font-display font-black text-4xl md:text-5xl text-parchment mb-4">
+            Turn Your BTC Into <span className="text-amber">Private Gold</span><br/>
             The $130M BTC on Starknet<br/>
             <span className="text-amber">has zero privacy today.</span><br/>
             That changes now.
           </h2>
           <p className="text-lg text-secondary mb-10">Be among the first to shield your Bitcoin. No waitlist. Testnet live.</p>
-          <Link href="/shield" className="btn-primary text-lg px-10 py-5">▶ Launch PHANTOM</Link>
+          <Link href="/shield" className="btn-primary text-lg px-10 py-5">▶ Launch MIDAS</Link>
           <p className="font-mono text-xs uppercase text-muted mt-8">Non-custodial · Open source · Audited</p>
         </div>
       </section>

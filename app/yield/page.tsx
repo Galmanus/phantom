@@ -29,7 +29,7 @@ const RISK_COLORS: Record<string, string> = {
 
 export default function YieldPage() {
   const { account, address } = useAccount()
-  const { isReady, shield, sdk, isLoading: sdkLoading, error: sdkError } = usePhantomSDK()
+  const { isReady, shield, depositYield, getActiveYieldPositions, isLoading: sdkLoading, error: sdkError } = usePhantomSDK()
   const { setTransactionState } = useWalletStore()
 
   // Strategies
@@ -82,11 +82,11 @@ export default function YieldPage() {
   // ─── Carregar posições do NoteStore ─────────────────────────────────────────
 
   const loadPositions = useCallback(async () => {
-    if (!isReady || !sdk) return
+    if (!isReady) return
     setIsLoadingPositions(true)
     try {
       // Load active yield positions from NoteStore via SDK
-      const activePositions = await sdk.getActiveYieldPositions()
+      const activePositions = await getActiveYieldPositions()
       setPositions(activePositions)
     } catch (err) {
       console.error('[Yield] Failed to load positions:', err)
@@ -94,7 +94,7 @@ export default function YieldPage() {
     } finally {
       setIsLoadingPositions(false)
     }
-  }, [isReady, sdk])
+  }, [isReady, getActiveYieldPositions])
 
   useEffect(() => {
     if (isReady) loadPositions()
@@ -129,7 +129,7 @@ export default function YieldPage() {
     try {
       // 1. Shield the asset (creates a ShieldedNote)
       const note = await shield(
-        'WBTC', // simplified — real impl: use selectedStrategy asset
+        'WBTC', // simplified — real impl: use selectedStrategy.asset
         amountSats,
         (step, message) => {
           console.debug(`[Yield] ${step}: ${message}`)
@@ -138,11 +138,21 @@ export default function YieldPage() {
         }
       )
 
-      // PLACEHOLDER: After shielding, route to YieldRouter contract
-      // Waiting for: full YieldRouter deployment + ZK yield deposit proof
-      // The note is shielded and stored — yield routing will be added in production
-      console.debug('[Yield] Note shielded:', note.commitment)
-      // TODO: await yieldRouter.depositShieldedYield(note, selectedStrategy.contractAddress)
+      // 2. Route to YieldRouter contract
+      const protocol = selectedStrategy.protocol as 'vesu' | 'uncap' | 'opus'
+      try {
+        await depositYield(note, protocol, (step, message) => {
+          console.debug(`[Yield] ${step}: ${message}`)
+          if (step === 'depositing') setTransactionState('submitting')
+        })
+      } catch (yieldError) {
+        // If yield routing fails, note is still shielded
+        console.error('[Yield] Yield routing failed:', yieldError)
+        setDepositError(`Shielded successfully but yield routing failed: ${yieldError instanceof Error ? yieldError.message : String(yieldError)}`)
+        setTransactionState('error')
+        setIsDepositing(false)
+        return
+      }
 
       setTransactionState('success')
       setDepositSuccess(`Successfully deposited ${formatSatsToBTC(amountSats)} into ${selectedStrategy.name}`)

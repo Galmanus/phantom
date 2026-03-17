@@ -1,4 +1,4 @@
-# PHANTOM: The First Private Bitcoin Yield Manager on Starknet
+# MIDAS: The First Private Bitcoin Yield Manager on Starknet
 
 ## A Comprehensive Whitepaper on Privacy-Preserving DeFi Infrastructure
 
@@ -6,7 +6,7 @@
 
 ## Abstract
 
-This whitepaper presents PHANTOM, a groundbreaking decentralized finance protocol that enables users to earn yield on Bitcoin-denominated assets while preserving transactional privacy through zero-knowledge cryptography. Built atop Starknet's STARK-proof ecosystem and leveraging the revolutionary STRK20 token standard, PHANTOM represents the first production-grade implementation of private Bitcoin yield management on Ethereum's Layer-2 scaling infrastructure. The protocol employs a commitment-based UTXO model adapted for EVM-compatible blockchains, utilizing Pedersen commitments for amount hiding and Poseidon hashing for nullifier generation. Our cryptographic construction ensures that transaction amounts, recipient addresses, and yield earned remain confidential while still permitting regulatory compliance through selective disclosure mechanisms. We detail the protocol's architectural components, security proofs, economic model, and the revolutionary STRK20 standard that makes this all possible. PHANTOM bridges the gap between transparent DeFi yield generation and the fundamental human right to financial privacy, creating a new paradigm for confidential on-chain finance.
+This whitepaper presents MIDAS, a groundbreaking decentralized finance protocol that enables users to earn yield on Bitcoin-denominated assets while preserving transactional privacy through zero-knowledge cryptography. Built atop Starknet's STARK-proof ecosystem and leveraging the revolutionary STRK20 token standard, MIDAS represents the first production-grade implementation of private Bitcoin yield management on Ethereum's Layer-2 scaling infrastructure. The protocol employs a commitment-based UTXO model adapted for EVM-compatible blockchains, utilizing Pedersen commitments for amount hiding and Poseidon hashing for nullifier generation. Our cryptographic construction ensures that transaction amounts, recipient addresses, and yield earned remain confidential while still permitting regulatory compliance through selective disclosure mechanisms. We detail the protocol's architectural components, security proofs, economic model, and the revolutionary STRK20 standard that makes this all possible. MIDAS bridges the gap between transparent DeFi yield generation and the fundamental human right to financial privacy, creating a new paradigm for confidential on-chain finance.
 
 ---
 
@@ -36,11 +36,11 @@ The significance of STARKs for privacy cannot be overstated. Unlike zk-SNARKs (Z
 
 Starknet's native ecosystem includes remarkable cryptographic capabilities: support for the Poseidon hash function (optimized for zero-knowledge proof generation), efficient elliptic curve operations using the STARK curve, and Cairo—the programming language specifically designed for provable computation. These primitives provide an ideal foundation for building privacy-preserving applications that can rival the functionality of transparent DeFi while maintaining complete confidentiality.
 
-### 1.4 Introducing PHANTOM
+### 1.4 Introducing MIDAS
 
-PHANTOM addresses the privacy crisis in DeFi by creating a comprehensive protocol for private Bitcoin yield management on Starknet. The protocol enables users to wrap their Bitcoin (as strkBTC), shield it into private notes, earn yield through integrated DeFi strategies, and unwrap their balance—all while maintaining complete privacy about amounts, positions, and returns.
+MIDAS addresses the privacy crisis in DeFi by creating a comprehensive protocol for private Bitcoin yield management on Starknet. The protocol enables users to wrap their Bitcoin (as strkBTC), shield it into private notes, earn yield through integrated DeFi strategies, and unwrap their balance—all while maintaining complete privacy about amounts, positions, and returns.
 
-What makes PHANTOM truly revolutionary is its integration with STRK20, a token standard that extends ERC-20 with native privacy capabilities. STRK20 represents a fundamental reimagining of how tokens can work on Ethereum-compatible blockchains, providing confidential transfers as a first-class primitive rather than an afterthought. By building on STRK20, PHANTOM achieves privacy that is architecturally integrated rather than bolted on, resulting in better performance, stronger security, and smoother user experience.
+What makes MIDAS truly revolutionary is its integration with STRK20, a token standard that extends ERC-20 with native privacy capabilities. STRK20 represents a fundamental reimagining of how tokens can work on Ethereum-compatible blockchains, providing confidential transfers as a first-class primitive rather than an afterthought. By building on STRK20, MIDAS achieves privacy that is architecturally integrated rather than bolted on, resulting in better performance, stronger security, and smoother user experience.
 
 ---
 
@@ -94,7 +94,7 @@ Despite its privacy features, STRK20 maintains full compatibility with existing 
 
 ### 3.1 Commitment Schemes in Detail
 
-PHANTOM employs Pedersen commitments as the fundamental cryptographic primitive for amount hiding. A Pedersen commitment to a value v with blinding factor r is computed as:
+MIDAS employs Pedersen commitments as the fundamental cryptographic primitive for amount hiding. A Pedersen commitment to a value v with blinding factor r is computed as:
 
 C = g^r * h^v mod p
 
@@ -108,7 +108,7 @@ The security of Pedersen commitments rests on two properties:
 
 ### 3.2 Nullifier Generation and Double-Spend Prevention
 
-In PHANTOM's UTXO-style model, each note can only be spent once. To enforce this, when a note is spent, a nullifier is computed and published on-chain. The contract maintains a set of spent nullifiers, rejecting any transaction that attempts to double-spend.
+In MIDAS's UTXO-style model, each note can only be spent once. To enforce this, when a note is spent, a nullifier is computed and published on-chain. The contract maintains a set of spent nullifiers, rejecting any transaction that attempts to double-spend.
 
 The nullifier is computed using Poseidon hashing:
 
@@ -124,15 +124,15 @@ The nullifier secret is a random value known only to the note owner, while the s
 
 ### 3.3 Merkle Tree Commitment Structure
 
-All valid PHANTOM notes are organized into a Merkle tree, a binary tree data structure where each leaf is a note commitment and each internal node is the hash of its children. The root of this tree is published on-chain, providing a compact commitment to the entire set of valid notes.
+All valid MIDAS notes are organized into a Merkle tree, a binary tree data structure where each leaf is a note commitment and each internal node is the hash of its children. The root of this tree is published on-chain, providing a compact commitment to the entire set of valid notes.
 
-PHANTOM uses Poseidon hashing for the Merkle tree, chosen for its efficiency in zero-knowledge circuits. A Poseidon Merkle tree with depth D can represent up to 2^D notes, with each level requiring one hash computation.
+MIDAS uses Poseidon hashing for the Merkle tree, chosen for its efficiency in zero-knowledge circuits. A Poseidon Merkle tree with depth D can represent up to 2^D notes, with each level requiring one hash computation.
 
 When a user creates a new note (through deposit or receive), the commitment is inserted as a leaf in the tree, and a new root is computed. When a user spends a note, they must provide a Merkle proof demonstrating that their note exists in the tree corresponding to the current root. The proof consists of the note's position and the sibling hashes at each level, allowing the verifier to recompute the root and confirm inclusion.
 
 ### 3.4 The Zero-Knowledge Proof System
 
-PHANTOM's privacy is enforced through zk-STARK proofs generated client-side and verified on-chain. The proof system demonstrates the validity of operations without revealing the underlying data. Let's examine the three core operations:
+MIDAS's privacy is enforced through zk-STARK proofs generated client-side and verified on-chain. The proof system demonstrates the validity of operations without revealing the underlying data. Let's examine the three core operations:
 
 **Shield (Deposit)**: When a user deposits tokens, they:
 1. Generate a random nullifier secret and salt
@@ -158,7 +158,7 @@ The contract verifies the proof without learning the amount or the user's secret
 
 The contract verifies the proof and transfers tokens to the withdrawal address.
 
-**Transfer**: Private transfers between PHANTOM users involve:
+**Transfer**: Private transfers between MIDAS users involve:
 1. The sender spending one or more input notes
 2. The sender creating output notes for the recipient and any change
 3. A proof showing value conservation and proper commitment formation
@@ -166,11 +166,11 @@ The contract verifies the proof and transfers tokens to the withdrawal address.
 
 ---
 
-## 4. PHANTOM Protocol Architecture
+## 4. MIDAS Protocol Architecture
 
 ### 4.1 The Shield Layer: Entering Privacy
 
-The shield layer handles the conversion of transparent tokens into shielded notes. This is the entry point into PHANTOM's privacy ecosystem. When a user wishes to shield their strkBTC, they follow this process:
+The shield layer handles the conversion of transparent tokens into shielded notes. This is the entry point into MIDAS's privacy ecosystem. When a user wishes to shield their strkBTC, they follow this process:
 
 **Step 1: Commitment Generation**. The user generates a random nullifier secret (256-bit random value) and a salt. Using these secrets along with the deposit amount, they compute a Pedersen commitment. This commitment is a cryptographic representation of the amount that reveals nothing to observers.
 
@@ -188,15 +188,15 @@ The shield layer handles the conversion of transparent tokens into shielded note
 
 ### 4.2 The Yield Generation Layer: Growing Capital
 
-Once tokens are shielded, they become part of PHANTOM's yield generation system. The Yield Router contract manages capital allocation across multiple strategies:
+Once tokens are shielded, they become part of MIDAS's yield generation system. The Yield Router contract manages capital allocation across multiple strategies:
 
-**Lending Protocols (Vesu)**: PHANTOM deposits shielded assets into Vesu's lending pools, earning interest from borrowers. The protocol supports multiple collateral types, allowing users to earn yield on their strkBTC while maintaining privacy. The yield rate fluctuates based on market dynamics but typically ranges from 2-5% APR for BTC-denominated positions.
+**Lending Protocols (Vesu)**: MIDAS deposits shielded assets into Vesu's lending pools, earning interest from borrowers. The protocol supports multiple collateral types, allowing users to earn yield on their strkBTC while maintaining privacy. The yield rate fluctuates based on market dynamics but typically ranges from 2-5% APR for BTC-denominated positions.
 
-**Concentrated Liquidity (Ekubo)**: For users seeking higher yields, PHANTOM can deposit liquidity into Ekubo's concentrated liquidity pools. These AMM positions earn trading fees when price movements occur within the specified range. Advanced users can provide liquidity at optimal price ranges to maximize fee generation.
+**Concentrated Liquidity (Ekubo)**: For users seeking higher yields, MIDAS can deposit liquidity into Ekubo's concentrated liquidity pools. These AMM positions earn trading fees when price movements occur within the specified range. Advanced users can provide liquidity at optimal price ranges to maximize fee generation.
 
 **Automated Vaults (Re7)**: Re7 vaults provide automated strategy management, rebalancing positions and harvesting yields automatically. These vaults implement sophisticated delta-neutral and leverage strategies that would be complex for individual users to manage.
 
-The privacy-preserving nature of PHANTOM extends throughout the yield generation process. When a user deposits 1 strkBTC, they receive a shielded note. As yield accrues, the protocol tracks the increased value internally through secret computations. The user can see their balance grow, but on-chain observers cannot determine:
+The privacy-preserving nature of MIDAS extends throughout the yield generation process. When a user deposits 1 strkBTC, they receive a shielded note. As yield accrues, the protocol tracks the increased value internally through secret computations. The user can see their balance grow, but on-chain observers cannot determine:
 - The original deposit amount
 - The yield earned
 - The specific strategy(ies) generating the yield
@@ -204,7 +204,7 @@ The privacy-preserving nature of PHANTOM extends throughout the yield generation
 
 ### 4.3 The Unshield Layer: Exiting Privacy
 
-The unshield layer enables users to convert shielded notes back into transparent tokens. This is the exit path from PHANTOM's privacy ecosystem:
+The unshield layer enables users to convert shielded notes back into transparent tokens. This is the exit path from MIDAS's privacy ecosystem:
 
 **Step 1: Note Selection**. The user selects which shielded note(s) to spend. They must know the nullifier secret, salt, and other parameters to construct the spend.
 
@@ -225,7 +225,7 @@ The unshield layer enables users to convert shielded notes back into transparent
 
 ### 4.4 Private Transfers: Between Users
 
-PHANTOM also supports private transfers between users without exiting to the transparent layer:
+MIDAS also supports private transfers between users without exiting to the transparent layer:
 
 **Sender Process**:
 1. Spends one or more input notes
@@ -246,17 +246,49 @@ PHANTOM also supports private transfers between users without exiting to the tra
 
 ---
 
+### 4.5 Private Liquid Staking: Earn While Staying Invisible
+
+MIDAS introduces **Private Liquid Staking** - a revolutionary feature that allows users to stake their BTC while maintaining complete privacy. This is the first implementation of shielded staking on Starknet.
+
+**How It Works:**
+
+1. **Shielded Stake Deposit**: Users deposit BTC into the Shielded Staking contract. The deposit creates a shielded note commitment - no one can see the amount or the staker's address.
+
+2. **Validator Participation**: MIDAS pools the shielded deposits and participates in Starknet's proof-of-stake consensus. The protocol aggregates stakes from multiple privacy-preserving depositors.
+
+3. **Private Reward Accumulation**: Validator rewards are tracked internally using zero-knowledge proofs. The smart contract updates the user's shielded balance without revealing the reward amount on-chain.
+
+4. **Liquid Token Issuance**: Users receive liquid staking tokens (mSTK) that represent their shielded stake. These tokens can be used in DeFi while the underlying stake continues earning rewards.
+
+5. **Unstaking with Privacy**: When users want to exit, they go through the 7-day unbonding period. The withdrawal is processed through the Shield contract, maintaining privacy throughout.
+
+**Key Features:**
+- **4-8% APY** on staked BTC
+- **100% Private** - No one can see your stake or rewards
+- **Liquid Tokens** - Use your stake in DeFi while earning
+- **Auto-Compound** - Rewards are automatically reinvested
+- **7-Day Unbonding** - Standard Starknet staking period
+- **10% Protocol Fee** - On rewards generated
+
+**Privacy Guarantees:**
+- Stake amounts are hidden via commitment scheme
+- Validator rewards are tracked via ZK proofs  
+- No link between on-chain address and staking position
+- Withdrawal history is private
+
+---
+
 ## 5. The Compliance Oracle: Privacy and Regulation
 
 ### 5.1 The False Dichotomy
 
 A common criticism of privacy protocols is that they enable illicit activity and cannot coexist with regulatory requirements. This represents a fundamental misunderstanding—both of how real-world financial systems work and of what privacy-preserving cryptography can achieve.
 
-Privacy in financial systems does not mean absence of accountability. Traditional banking maintains customer privacy from the public while providing extensive reporting to regulators under appropriate circumstances. PHANTOM replicates this balance through its Compliance Oracle.
+Privacy in financial systems does not mean absence of accountability. Traditional banking maintains customer privacy from the public while providing extensive reporting to regulators under appropriate circumstances. MIDAS replicates this balance through its Compliance Oracle.
 
 ### 5.2 Selective Disclosure via Viewing Keys
 
-PHANTOM enables users to generate viewing keys that allow specific parties to verify transaction details without compromising overall privacy. The viewing key derivation uses HKDF (HMAC-based Key Derivation Function):
+MIDAS enables users to generate viewing keys that allow specific parties to verify transaction details without compromising overall privacy. The viewing key derivation uses HKDF (HMAC-based Key Derivation Function):
 
 viewing_key = HKDF(master_key, info = scope || recipient || parameters)
 
@@ -286,7 +318,7 @@ The Compliance Oracle can be integrated with regulatory frameworks:
 
 ### 6.1 Token Economics
 
-STRK20 serves as the base asset for PHANTOM. Users acquire strkBTC (the STRK20 representation of wrapped Bitcoin) through:
+STRK20 serves as the base asset for MIDAS. Users acquire strkBTC (the STRK20 representation of wrapped Bitcoin) through:
 
 **Official Bridges**: Canonical bridges that wrap BTC into strkBTC with full transparency verification.
 
@@ -294,7 +326,7 @@ STRK20 serves as the base asset for PHANTOM. Users acquire strkBTC (the STRK20 r
 
 **Fiat On-Ramps**: Direct purchase mechanisms that will be integrated in future versions.
 
-The PHANTOM protocol charges a performance fee on yield generated. This fee is currently set at 10% of earned yield, distributed as:
+The MIDAS protocol charges a performance fee on yield generated. This fee is currently set at 10% of earned yield, distributed as:
 
 - 5% to STRK token stakers
 - 3% to protocol treasury
@@ -302,13 +334,13 @@ The PHANTOM protocol charges a performance fee on yield generated. This fee is c
 
 ### 6.2 Incentive Alignment
 
-PHANTOM's design creates aligned incentives across all participants:
+MIDAS's design creates aligned incentives across all participants:
 
 **Depositors** receive yield on their Bitcoin while maintaining privacy. The privacy itself is valuable—users pay for it implicitly through the complexity of generating proofs.
 
-**DeFi Protocols** that PHANTOM deposits into receive stable, privacy-preserving capital that doesn't reveal strategy information to competitors.
+**DeFi Protocols** that MIDAS deposits into receive stable, privacy-preserving capital that doesn't reveal strategy information to competitors.
 
-**Proof Generators** bear the computational cost of zk-STARK generation. PHANTOM optimizes this through efficient circuit design and client-side proving that can run on consumer hardware.
+**Proof Generators** bear the computational cost of zk-STARK generation. MIDAS optimizes this through efficient circuit design and client-side proving that can run on consumer hardware.
 
 **STRK Stakers** receive protocol revenue through the fee distribution, creating sustainable demand for the token.
 
@@ -320,7 +352,7 @@ The economic model ensures long-term sustainability through multiple mechanisms:
 
 **Fee Revenue**: The performance fee creates ongoing revenue that funds development and security.
 
-**Token Value Accrual**: As PHANTOM TVL grows, the value accrues to STRK holders through fee revenue and utility demand.
+**Token Value Accrual**: As MIDAS TVL grows, the value accrues to STRK holders through fee revenue and utility demand.
 
 **Network Effects**: Privacy is inherently valuable and creates strong user retention. Once a user shields their position, they have strong incentives to remain in the ecosystem.
 
@@ -330,7 +362,7 @@ The economic model ensures long-term sustainability through multiple mechanisms:
 
 ### 7.1 Cryptographic Security Assumptions
 
-PHANTOM's security rests on well-established cryptographic assumptions:
+MIDAS's security rests on well-established cryptographic assumptions:
 
 **Discrete Logarithm Problem**: The hardness of computing discrete logarithms in the BN-254 elliptic curve group provides the basis for Pedersen commitment security.
 
@@ -342,7 +374,7 @@ PHANTOM's security rests on well-established cryptographic assumptions:
 
 ### 7.2 Smart Contract Security
 
-PHANTOM's Cairo contracts implement multiple security measures:
+MIDAS's Cairo contracts implement multiple security measures:
 
 **Reentrancy Protection**: All critical functions follow the Checks-Effects-Interactions pattern, preventing reentrancy attacks.
 
@@ -368,7 +400,7 @@ Users must maintain security of their secrets:
 
 ### 8.1 vs. Transparent DeFi
 
-| Feature | Transparent DeFi | PHANTOM |
+| Feature | Transparent DeFi | MIDAS |
 |---------|------------------|---------|
 | Position Visibility | Full public transparency | Complete privacy |
 | Yield Tracking | Observable on-chain | Hidden until withdrawal |
@@ -377,7 +409,7 @@ Users must maintain security of their secrets:
 
 ### 8.2 vs. Other Privacy Protocols
 
-| Feature | Aztec | Zcash | PHANTOM |
+| Feature | Aztec | Zcash | MIDAS |
 |---------|-------|-------|---------|
 | Platform | Ethereum L2 |独立链 | Starknet |
 | Privacy Model | UTXO | UTXO | UTXO |
@@ -387,7 +419,7 @@ Users must maintain security of their secrets:
 
 ### 8.3 Unique Value Proposition
 
-PHANTOM offers unique advantages:
+MIDAS offers unique advantages:
 
 **STRK20 Integration**: Native privacy at the token level, not an afterthought.
 
@@ -403,16 +435,19 @@ PHANTOM offers unique advantages:
 
 ### 9.1 Current Status
 
-PHANTOM is currently deployed on Starknet Sepolia testnet for testing and auditing. The core protocol components are implemented:
+MIDAS is currently deployed on Starknet Sepolia testnet for testing and auditing. The core protocol components are implemented:
 
 - Shield and Unshield contracts
 - Merkle tree implementation
 - Zero-knowledge circuit for basic operations
 - Client SDK with key derivation and note management
+- **Private Liquid Staking contract** (NEW!)
+- Shielded staking positions with ZK proofs
+- Yield claiming mechanism
 
 ### 9.2 Mainnet Launch
 
-Following successful audit completion and strkBTC mainnet deployment, PHANTOM will launch on Starknet mainnet. The launch will include:
+Following successful audit completion and strkBTC mainnet deployment, MIDAS will launch on Starknet mainnet. The launch will include:
 
 - Full protocol deployment
 - Integration with strkBTC
@@ -435,13 +470,13 @@ Future development includes:
 
 ## 10. Conclusion
 
-PHANTOM represents a fundamental advancement in private DeFi infrastructure. By combining Starknet's revolutionary STARK proving technology with the STRK20 privacy token standard, the protocol delivers production-grade privacy without sacrificing functionality or capital efficiency.
+MIDAS represents a fundamental advancement in private DeFi infrastructure. By combining Starknet's revolutionary STARK proving technology with the STRK20 privacy token standard, the protocol delivers production-grade privacy without sacrificing functionality or capital efficiency.
 
-The protocol addresses critical gaps in the current DeFi landscape: the inability for Bitcoin holders to earn yield while maintaining privacy. Large positions in transparent DeFi are vulnerable to front-running, surveillance, and exploitation. PHANTOM solves these problems through cryptographic privacy that keeps positions, amounts, and returns completely confidential.
+The protocol addresses critical gaps in the current DeFi landscape: the inability for Bitcoin holders to earn yield while maintaining privacy. Large positions in transparent DeFi are vulnerable to front-running, surveillance, and exploitation. MIDAS solves these problems through cryptographic privacy that keeps positions, amounts, and returns completely confidential.
 
-As DeFi continues to mature and regulatory attention increases, privacy-preserving protocols like PHANTOM will become essential infrastructure. Institutions require confidentiality for competitive reasons. Individuals deserve privacy as a fundamental right. The choice between yield generation and financial privacy should not exist—and with PHANTOM, it no longer does.
+As DeFi continues to mature and regulatory attention increases, privacy-preserving protocols like MIDAS will become essential infrastructure. Institutions require confidentiality for competitive reasons. Individuals deserve privacy as a fundamental right. The choice between yield generation and financial privacy should not exist—and with MIDAS, it no longer does.
 
-The future of finance is private, yield-bearing, and decentralized. PHANTOM builds that future today.
+The future of finance is private, yield-bearing, and decentralized. MIDAS builds that future today.
 
 ---
 
@@ -463,7 +498,7 @@ The future of finance is private, yield-bearing, and decentralized. PHANTOM buil
 
 ---
 
-*PHANTOM — The First Private BTC Yield Manager on Starknet*
+*MIDAS — The First Private BTC Yield Manager on Starknet*
 
 *Built on strkBTC + STRK20 + Stwo + Cairo 2.15.0*
 

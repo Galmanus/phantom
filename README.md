@@ -1,22 +1,21 @@
 <!--
-  PHANTOM — Private BTC Yield Manager on Starknet
+  MIDAS — Private BTC Yield Manager on Starknet
   
-  The first private BTC yield manager built on STRK20.
-  Privacy by default, compliant by design.
+  Turn your BTC into private gold. Shield, earn yield, stay invisible.
 -->
 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Galmanus/phantom/main/phantom.jpeg">
-    <img src="https://raw.githubusercontent.com/Galmanus/phantom/main/phantom.jpeg" alt="PHANTOM Logo" width="400">
+    <img src="https://raw.githubusercontent.com/Galmanus/phantom/main/phantom.jpeg" alt="MIDAS Logo" width="400">
   </picture>
 </p>
 
-<h1 align="center">PHANTOM</h1>
+<h1 align="center">MIDAS</h1>
 
 <p align="center">
-  <strong>The First Private BTC Yield Manager on Starknet</strong><br>
-  Built on STRK20 + strkBTC — Privacy by default, compliant by design
+  <strong>The Private BTC Yield Manager on Starknet</strong><br>
+  Built on Starknet — Turn your BTC into private gold
 </p>
 
 <p align="center">
@@ -56,7 +55,7 @@
 
 ## Overview
 
-PHANTOM is a **private BTC yield manager** built on Starknet that enables users to:
+MIDAS is a **private BTC yield manager** built on Starknet that enables users to:
 
 - **Earn yield** on BTC-backed assets while maintaining complete privacy
 - **Shield** their BTC into a privacy pool
@@ -87,7 +86,7 @@ This is incompatible with how modern finance operates:
 | **Individual Privacy** | Financial privacy is a fundamental right |
 | **Market Making** | Strategy exposure leads to front-running |
 
-**PHANTOM solves this** by making every transaction private by default using zero-knowledge proofs.
+**MIDAS solves this** by making every transaction private by default using zero-knowledge proofs.
 
 ---
 
@@ -122,7 +121,7 @@ This is incompatible with how modern finance operates:
 
 ```
 +------------------------------------------------------------------+
-|                           PHANTOM Stack                          |
+|                           MIDAS Stack                          |
 +------------------------------------------------------------------+
 
                          +-----------------+
@@ -134,9 +133,9 @@ This is incompatible with how modern finance operates:
                                   |
                                   v
 +------------------------------------------------------------------+
-|                        PHANTOM SDK                               |
+|                        MIDAS SDK                               |
 |  +-----------------+  +-----------------+  +-----------------+  |
-|  | PhantomKeyManager|  |   NoteStore     |  |ProverWorkerClient|  |
+|  | MidasKeyManager|  |   NoteStore     |  |ProverWorkerClient|  |
 |  |  + PBKDF2       |  |  + IndexedDB    |  |  + WASM Runtime |  |
 |  |  + AES-GCM-256  |  |  + Encryption   |  |  + Stwo Prover  |  |
 |  |  + SNIP-12      |  |  + Notes        |  |  + Web Worker   |  |
@@ -148,8 +147,8 @@ This is incompatible with how modern finance operates:
 |    Cairo Contracts          |    |    Starknet Sequencer          |
 |  +-----------------------+ |    |                                |
 |  |  + Yield Router      | |    |  + Verifies ZK proofs         |
-|  |  + Phantom Pool      | |    |  + Executes transactions       |
-|  |  + Phantom Verifier  | |    |  + Maintains state             |
+|  |  + Midas Pool      | |    |  + Executes transactions       |
+|  |  + Midas Verifier  | |    |  + Maintains state             |
 |  |  + Compliance Oracle | |    |                                |
 |  +-----------------------+ |    +--------------------------------+
 +-----------------------------+
@@ -172,7 +171,7 @@ User Wallet
 |                 |                     |
 |                 v                     |
 |          +--------------+            |
-|          | PhantomSDK   |            |
+|          | MidasSDK   |            |
 |          |              |            |
 |          | + KeyManager |            |
 |          | + NoteStore  |            |
@@ -240,11 +239,39 @@ const strategies = await getStrategiesWithLiveAPY();
 - Amounts affect public state (necessary for DEX)
 - **Your identity remains private**
 
-### 4. Anonymous Staking
+### 4. Private Liquid Staking
 
-- Acquire liquid staking positions privately
-- Swap to Stake in one flow
-- No public address linked to staking position
+MIDAS introduces **Private Liquid Staking** - a groundbreaking feature that allows users to stake BTC while maintaining complete privacy:
+
+```typescript
+// Stake BTC privately
+const stake = async (amount: bigint, asset: Asset) => {
+  // 1. Generate shielded staking commitment
+  const stakingCommitment = await prover.deriveStakingCommitment({
+    amount,
+    assetId: asset.id,
+    validatorSecret: randomBytes(32),
+    salt: randomBytes(32)
+  });
+  
+  // 2. Generate ZK proof
+  const proof = await prover.proveStaking({ stakingCommitment, ... });
+  
+  // 3. Submit to staking contract
+  await stakingContract.stake(proof, stakingCommitment);
+  
+  // 4. Receive liquid staking token (representing staked position)
+  return await stakingContract.getStakingNFT();
+};
+```
+
+**Key Features:**
+- **4-8% APY** on staked BTC
+- **7-day unbonding period**
+- **10% protocol fee** on rewards
+- **Liquid tokens** - Use your staking position in DeFi while earning rewards
+- **Auto-compound** - Rewards are automatically reinvested
+- **100% private** - No one can see your stake or rewards
 
 ### 5. Compliance
 
@@ -395,7 +422,7 @@ phantom/
 |   +--- swap/                    # Swap page
 |   +--- yield/                   # Yield page
 |   +--- providers/               # React providers
-|   |   +--- PhantomProvider.tsx
+|   |   +--- MidasProvider.tsx
 |   |   +--- StarknetProvider.tsx
 |   +--- globals.css              # Tailwind styles
 |
@@ -415,10 +442,10 @@ phantom/
 |   +--- compliance_oracle/       # Compliance oracle
 |   +--- intent_matcher/         # Intent matching
 |
-+--- sdk/                        # PHANTOM SDK (TypeScript)
++--- sdk/                        # MIDAS SDK (TypeScript)
 |   +--- src/
 |   |   +--- key-derivation.ts   # PBKDF2 + AES-GCM
-|   |   +--- PhantomSDK.ts        # Main SDK
+|   |   +--- MidasSDK.ts        # Main SDK
 |   |   +--- storage/            # IndexedDB storage
 |   |   +--- proof/              # Prover worker client
 |   |   +--- integrations/        # DeFi protocol integrations
@@ -428,7 +455,7 @@ phantom/
 +--- hooks/                      # React hooks
 |   +--- useStrkBTC.ts          # strkBTC balance hook
 |   +--- useWalletSync.ts       # Wallet sync hook
-|   +--- usePhantomTransaction.ts # Transaction hooks
+|   +--- useMidasTransaction.ts # Transaction hooks
 |
 +--- lib/                        # Utilities
 |   +--- constants.ts            # Contract addresses
@@ -466,7 +493,7 @@ phantom/
 
 ### Threat Model
 
-PHANTOM assumes an **honest prover** model:
+MIDAS assumes an **honest prover** model:
 
 ```
 +------------------------------------------------------------------+
@@ -506,7 +533,7 @@ PHANTOM assumes an **honest prover** model:
 
 ## Compliance
 
-PHANTOM is designed to work with regulatory requirements:
+MIDAS is designed to work with regulatory requirements:
 
 ### Encrypted Viewing Keys
 
@@ -543,18 +570,25 @@ This is **not a backdoor** — it's a carefully scoped access mechanism that pre
 - [x] Basic SDK
 
 ### Phase 2: Core Protocol (In Progress)
+- [x] Privacy pool contract
+- [x] Shield/Unshield flows
 - [ ] Deploy contracts to Sepolia
 - [ ] strkBTC integration
-- [ ] Shield/Unshield flows
-- [ ] Privacy pool contract
 
-### Phase 3: Yield Features (Planned)
+### Phase 3: Private Liquid Staking (In Progress)
+- [x] Private Liquid Staking contract
+- [x] Shielded staking positions
+- [x] Yield claiming with ZK proofs
+- [ ] Unstaking with 7-day unbonding
+- [ ] Position transfers
+- [ ] Integration with frontend
+
+### Phase 4: Yield Features (Planned)
 - [ ] Yield router integration
 - [ ] Vesu lending integration
 - [ ] Anonymous swaps (Ekubo)
-- [ ] Anonymous staking
 
-### Phase 4: Production (Planned)
+### Phase 5: Production (Planned)
 - [ ] Mainnet deployment
 - [ ] Security audit
 - [ ] Bug bounty program
@@ -612,7 +646,7 @@ MIT License — see LICENSE for details.
 ---
 
 <p align="center">
-  <strong>PHANTOM — The First Private BTC Yield Manager on Starknet</strong><br>
+  <strong>MIDAS — The First Private BTC Yield Manager on Starknet</strong><br>
   <em>Privacy by default. Compliant by design.</em>
 </p>
 

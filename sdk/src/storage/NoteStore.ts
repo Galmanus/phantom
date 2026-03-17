@@ -8,7 +8,9 @@
  * - Encryption key is derived from user password via PBKDF2 with per-user salt
  */
 
-import { openDB, IDBPDatabase, IDBKeyRange } from 'idb';
+import { openDB, IDBPDatabase } from 'idb';
+// IDBKeyRange is a global interface in browsers, not exported from idb library
+type IDBKeyRange = globalThis.IDBKeyRange;
 import type { ShieldedNote, YieldPosition, IntentReceipt } from '../types';
 import { NoteSelectionError, StorageError } from '../types';
 import {

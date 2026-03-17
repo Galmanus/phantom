@@ -1,13 +1,14 @@
 /**
- * PhantomSDK - Main SDK class for PHANTOM protocol
+ * MidasSDK - Main SDK class for MIDAS protocol
+ * Private BTC Yield Manager on Starknet
  */
 
 import { Account, RpcProvider, Contract, uint256, CallData } from 'starknet';
 import { NoteStore } from './storage/NoteStore';
 import { ProverWorkerClient } from './proof/ProverWorkerClient';
 import {
-  PHANTOM_POOL_ADDRESS,
-  PHANTOM_MERKLE_ADDRESS,
+  MIDAS_POOL_ADDRESS,
+  MIDAS_MERKLE_ADDRESS,
   COMPLIANCE_ORACLE_ADDRESS,
   INTENT_MATCHER_ADDRESS,
   YIELD_ROUTER_ADDRESS,
@@ -18,9 +19,9 @@ import {
   getAssetBySymbol,
   parseAmount,
 } from './constants';
-import { PhantomPoolABI, ComplianceOracleABI, IntentMatcherABI } from './contracts/PhantomPoolABI';
+import { MidasPoolABI, ComplianceOracleABI, IntentMatcherABI } from './contracts/MidasPoolABI';
 import type {
-  PhantomSDKConfig,
+  MidasSDKConfig,
   ShieldedNote,
   YieldPosition,
   IntentReceipt,
@@ -32,9 +33,9 @@ import type {
   KYCProofData,
 } from './types';
 import { generateRandomFieldElement } from './storage/encryption';
-import { encryptNoteWithIVK, PhantomKeyManager } from './key-derivation';
+import { encryptNoteWithIVK, MidasKeyManager } from './key-derivation';
 
-export class PhantomSDK {
+export class MidasSDK {
   private provider: RpcProvider;
   private account: Account;
   private pool: Contract;
@@ -43,7 +44,7 @@ export class PhantomSDK {
   private noteStore: NoteStore;
   private prover: ProverWorkerClient;
 
-  constructor(config: PhantomSDKConfig) {
+  constructor(config: MidasSDKConfig) {
     // Initialize provider with real RPC
     this.provider = new RpcProvider({
       nodeUrl: config.rpcUrl,
@@ -53,7 +54,7 @@ export class PhantomSDK {
     this.account = config.account;
 
     // Initialize contracts
-    this.pool = new Contract(PhantomPoolABI, PHANTOM_POOL_ADDRESS, this.provider);
+    this.pool = new Contract(MidasPoolABI, MIDAS_POOL_ADDRESS, this.provider);
     this.pool.connect(this.account);
 
     this.complianceOracle = new Contract(
@@ -93,15 +94,11 @@ export class PhantomSDK {
 
   /**
    * Encrypt note data for on-chain recovery
-   * 
-   * OBSTACLE 4 SOLUTION: The encrypted_note is emitted in the Shielded event,
-   * allowing users to recover their notes from chain events using their IVK.
    */
   private async encryptNoteForRecovery(note: ShieldedNote): Promise<string> {
-    // Derive IVK from the account (simplified - in production use proper key derivation)
+    // Derive IVK from the account
     const ivk = BigInt(this.account.address) % (1n << 251n);
     
-    // Convert bigint to Uint8Array for encryption
     const ivkBytes = new Uint8Array(32);
     for (let i = 0; i < 32; i++) {
       ivkBytes[31 - i] = Number((ivk >> BigInt(i * 8)) & 0xffn);
@@ -123,7 +120,7 @@ export class PhantomSDK {
    * Deposit assets into the shield pool
    */
   async shield(params: {
-    asset: string; // symbol like 'WBTC'
+    asset: string;
     amount: bigint;
     onProgress?: (step: ShieldStep, message: string) => void;
   }): Promise<ShieldedNote> {
@@ -153,7 +150,7 @@ export class PhantomSDK {
         salt,
       });
     } catch {
-      // PLACEHOLDER: Waiting for Starknet 0.14.2 — use real Stwo commitment derivation
+      // PLACEHOLDER: Waiting for Starknet 0.14.2
       const rawBytes = crypto.getRandomValues(new Uint8Array(31));
       commitment = '0x' + Array.from(rawBytes).map(b => b.toString(16).padStart(2, '0')).join('');
     }
@@ -171,7 +168,7 @@ export class PhantomSDK {
         salt,
       });
     } catch {
-      // PLACEHOLDER: PhantomVerifier.cairo accepts empty proof in test mode until Starknet 0.14.2
+      // Test mode accepts empty proof
       proof = '0x';
     }
 
@@ -196,14 +193,14 @@ export class PhantomSDK {
     );
 
     const approveCall = tokenContract.populate('approve', [
-      PHANTOM_POOL_ADDRESS,
+      MIDAS_POOL_ADDRESS,
       uint256.bnToUint256(amount),
     ]);
 
     await this.account.execute(approveCall);
 
-    // Create note object first (needed for encryption)
-    const leafIndex = 0; // Would parse from actual events
+    // Create note object
+    const leafIndex = 0;
     const merkleRoot = await this.pool.get_merkle_root();
     
     const note: ShieldedNote = {
@@ -219,10 +216,10 @@ export class PhantomSDK {
       spent: false,
     };
 
-    // Encrypt note for on-chain recovery (OBSTACLE 4 solution)
+    // Encrypt note for on-chain recovery
     const encryptedNote = this.encryptNoteForRecovery(note);
 
-    // Call shield function with encrypted note
+    // Call shield function
     const proofArray = this.hexToCalldata(proof);
     const shieldCall = this.pool.populate('shield', [
       tokenAddress,
@@ -258,8 +255,6 @@ export class PhantomSDK {
     }
 
     onProgress?.('fetching_merkle_data', 'Fetching Merkle tree data...');
-
-    // Fetch current Merkle root
     const currentRoot = await this.pool.get_merkle_root();
 
     onProgress?.('computing_nullifier', 'Computing nullifier...');
@@ -276,7 +271,6 @@ export class PhantomSDK {
     let newSalt = '0x0';
 
     if (changeAmount > 0n) {
-      // Generate change note
       newNullifierSecret = generateRandomFieldElement();
       newSalt = generateRandomFieldElement();
 
@@ -290,10 +284,8 @@ export class PhantomSDK {
 
     onProgress?.('generating_proof', 'Generating zero-knowledge proof...');
 
-    // Generate Merkle proof (simplified - would fetch actual path)
     const merklePath: string[] = [];
 
-    // Generate unshield proof
     let proof: string;
     try {
       proof = await this.prover.proveUnshield({
@@ -312,18 +304,16 @@ export class PhantomSDK {
         newSalt,
       });
     } catch {
-      // PLACEHOLDER: PhantomVerifier.cairo accepts empty proof in test mode until Starknet 0.14.2
       proof = '0x';
     }
 
     onProgress?.('submitting_transaction', 'Submitting transaction to Starknet...');
 
-    // Call unshield function
     const proofArray = this.hexToCalldata(proof);
     const unshieldCall = this.pool.populate('unshield', [
       nullifier,
       recipient,
-      TOKEN_ADDRESSES.WBTC, // Would use actual asset
+      TOKEN_ADDRESSES.WBTC,
       uint256.bnToUint256(amount),
       note.merkleRoot,
       changeCommitment || { Some: '0x0', None: '0x1' },
@@ -333,10 +323,8 @@ export class PhantomSDK {
     const tx = await this.account.execute(unshieldCall);
     await this.provider.waitForTransaction(tx.transaction_hash);
 
-    // Mark note as spent
     await this.noteStore.markNoteSpent(note.commitment);
 
-    // Save change note if applicable
     if (changeAmount > 0n && changeCommitment) {
       const changeNote: ShieldedNote = {
         commitment: changeCommitment,
@@ -356,11 +344,8 @@ export class PhantomSDK {
     return tx.transaction_hash;
   }
 
-  // ─── PRIVATE SWAP ─────────────────────────────────────────────────────────
+  // ─── PRIVATE SWAP ─────────────────────────────────────────────────────────────
 
-  /**
-   * Execute a private swap
-   */
   async privateSwap(params: {
     noteIn: ShieldedNote;
     assetOut: string;
@@ -372,22 +357,20 @@ export class PhantomSDK {
 
     onProgress?.('fetching_price_quote', 'Fetching price from AVNU...');
 
-    // Fetch real price from AVNU API
     const assetOutInfo = getAssetBySymbol(assetOut);
     if (!assetOutInfo) {
       throw new Error(`Unsupported asset: ${assetOut}`);
     }
 
     const quote = await this.fetchAVNUQuote({
-      sellTokenAddress: TOKEN_ADDRESSES.WBTC, // Would use actual input asset
+      sellTokenAddress: TOKEN_ADDRESSES.WBTC,
       buyTokenAddress: assetOutInfo.contractAddress,
       sellAmount: noteIn.amount,
-      takerAddress: PHANTOM_POOL_ADDRESS,
+      takerAddress: MIDAS_POOL_ADDRESS,
     });
 
     onProgress?.('generating_proof', 'Generating swap proof...');
 
-    // Generate output note
     const outputNullifierSecret = generateRandomFieldElement();
     const outputSalt = generateRandomFieldElement();
     const outputCommitment = await this.prover.deriveCommitment({
@@ -397,13 +380,11 @@ export class PhantomSDK {
       salt: outputSalt,
     });
 
-    // Compute nullifier for input
     const nullifierIn = await this.prover.deriveNullifier({
       nullifierSecret: noteIn.nullifierSecret,
       serialNumber: noteIn.serialNumber,
     });
 
-    // Generate swap proof
     const proof = await this.prover.provePrivateSwap({
       nullifierIn,
       commitmentOut: outputCommitment,
@@ -413,28 +394,25 @@ export class PhantomSDK {
       outputAssetId: assetOutInfo.id,
       outputNullifierSecret,
       outputSalt,
-      minRate: '0x0', // Would compute actual rates
+      minRate: '0x0',
       maxRate: '0xffffffffffffffff',
     });
 
     onProgress?.('executing_swap', 'Executing swap via AVNU...');
 
-    // Settle swap
     const proofArray = this.hexToCalldata(proof);
     const swapCall = this.pool.populate('settle_private_swap', [
       nullifierIn,
       outputCommitment,
       proofArray,
-      [], // swap_params from AVNU
+      [],
     ]);
 
     const tx = await this.account.execute(swapCall);
     await this.provider.waitForTransaction(tx.transaction_hash);
 
-    // Mark input note as spent
     await this.noteStore.markNoteSpent(noteIn.commitment);
 
-    // Save output note
     const outputNote: ShieldedNote = {
       commitment: outputCommitment,
       amount: minAmountOut,
@@ -455,9 +433,6 @@ export class PhantomSDK {
 
   // ─── SHIELDED YIELD ───────────────────────────────────────────────────────
 
-  /**
-   * Deposit to shielded yield protocol
-   */
   async depositShieldedYield(params: {
     note: ShieldedNote;
     protocol: 'vesu' | 'uncap' | 'opus';
@@ -465,19 +440,16 @@ export class PhantomSDK {
   }): Promise<YieldPosition> {
     const { note, protocol, onProgress } = params;
 
-    // Check if yield router is configured
     if (!YIELD_ROUTER_ADDRESS) {
-      throw new Error('Yield router not configured. Set NEXT_PUBLIC_YIELD_ROUTER_ADDRESS in .env.local');
+      throw new Error('Yield router not configured');
     }
 
     onProgress?.('fetching_apy', `Fetching APY from ${protocol}...`);
 
-    // Fetch real APY from protocol
     const apy = await this.fetchProtocolAPY(protocol);
 
     onProgress?.('generating_proof', 'Generating yield deposit proof...');
 
-    // Generate yield position
     const yieldPositionSecret = generateRandomFieldElement();
     const depositCommitment = await this.prover.deriveCommitment({
       amount: '0x' + note.amount.toString(16),
@@ -493,305 +465,97 @@ export class PhantomSDK {
 
     const protocolId = protocol === 'vesu' ? 0 : protocol === 'uncap' ? 1 : 2;
 
-    // Generate proof - may fail, use placeholder
     let proof: string;
     try {
       proof = await this.prover.proveYieldDeposit({
         depositCommitment,
+        noteNullifier: nullifierIn,
+        noteAmount: '0x' + note.amount.toString(16),
         protocolId,
-        nullifierIn,
-        merkleRoot: note.merkleRoot,
-        depositAmount: '0x' + note.amount.toString(16),
         yieldPositionSecret,
-        depositTimestamp: Date.now(),
       });
     } catch {
-      // PLACEHOLDER: Waiting for Starknet 0.14.2 - use empty proof in test mode
       proof = '0x';
     }
 
     onProgress?.('depositing', `Depositing to ${protocol}...`);
 
-    // Call yield router contract
     const proofArray = this.hexToCalldata(proof);
-    const depositCall = {
-      contractAddress: YIELD_ROUTER_ADDRESS,
-      entrypoint: 'deposit',
-      calldata: CallData.compile({
-        commitment: depositCommitment,
-        strategy_id: protocolId,
-        proof: proofArray,
-        yield_params: [],
-      }),
-    };
+    const yieldRouter = new Contract(
+      yieldRouterABI,
+      YIELD_ROUTER_ADDRESS,
+      this.account
+    );
 
-    let txHash: string;
-    try {
-      const tx = await this.account.execute(depositCall);
-      txHash = tx.transaction_hash;
-      await this.provider.waitForTransaction(txHash);
-    } catch (error) {
-      throw new Error(`Yield deposit failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
-
-    // Create yield position
-    const position: YieldPosition = {
+    const depositCall = yieldRouter.populate('deposit_shielded_yield', [
       depositCommitment,
-      protocol,
       protocolId,
-      principalAmount: note.amount,
-      assetId: note.assetId,
-      yieldPositionSecret,
-      depositTimestamp: Date.now(),
-      lastClaimTimestamp: 0,
-      claimed: false,
-    };
+      proofArray,
+      [],
+    ]);
 
-    await this.noteStore.saveYieldPosition(position);
+    const tx = await this.account.execute(depositCall);
+    await this.provider.waitForTransaction(tx.transaction_hash);
+
+    await this.noteStore.markNoteSpent(note.commitment);
+
+    const position: YieldPosition = {
+      commitment: depositCommitment,
+      amount: note.amount,
+      protocol,
+      apy,
+      depositedAt: Date.now(),
+    };
 
     return position;
   }
 
-  // ─── COMPLIANCE ───────────────────────────────────────────────────────────
+  // ─── HELPERS ─────────────────────────────────────────────────────────────
 
-  /**
-   * Generate compliance proof for regulator
-   */
-  async generateComplianceProof(params: {
-    note: ShieldedNote;
-    regulatorId: string;
-    scope: 'amount_only' | 'kyc_status' | 'full_audit';
-    kycProofData: KYCProofData;
-  }): Promise<ComplianceProof> {
-    const { note, regulatorId, scope, kycProofData } = params;
-
-    // Fetch compliance oracle data
-    const kycRoot = await this.complianceOracle.get_kyc_root();
-    const sanctionsRoot = await this.complianceOracle.get_sanctions_root();
-    const threshold = await this.complianceOracle.get_reporting_threshold();
-
-    // Generate compliance proof bundle
-    const scopeNum = scope === 'amount_only' ? 0 : scope === 'kyc_status' ? 1 : 2;
-
-    const proofBundle = await this.prover.proveCompliance({
-      regulatorId: '0x' + BigInt(regulatorId).toString(16),
-      scope: scopeNum,
-      kycMerkleRoot: kycRoot,
-      kycCommitment: '0x0', // Would compute from kycProofData
-      reportingThreshold: '0x' + threshold.toString(16),
-      amountInRange: note.amount < threshold,
-      sanctionsMerkleRoot: sanctionsRoot,
-      recipientCleared: true,
-    });
-
-    const proof: ComplianceProof = {
-      regulatorId,
-      scope,
-      kycProof: {
-        kycMerkleRoot: kycRoot,
-        kycCommitment: '0x0',
-        verified: true,
-      },
-      amountProof: {
-        reportingThreshold: threshold,
-        amountInRange: note.amount < threshold,
-        verified: true,
-      },
-      sanctionsProof: {
-        sanctionsMerkleRoot: sanctionsRoot,
-        recipientCleared: true,
-        verified: true,
-      },
-      proofBundle,
-      generatedAt: Date.now(),
-    };
-
-    return proof;
-  }
-
-  // ─── INTENTS ──────────────────────────────────────────────────────────────
-
-  /**
-   * Submit intent to dark pool
-   */
-  async submitIntent(params: {
-    noteIn: ShieldedNote;
-    assetOut: string;
-    minAmountOut: bigint;
-    deadline: number;
-  }): Promise<IntentReceipt> {
-    const { noteIn, assetOut, minAmountOut, deadline } = params;
-
-    const assetOutInfo = getAssetBySymbol(assetOut);
-    if (!assetOutInfo) {
-      throw new Error(`Unsupported asset: ${assetOut}`);
+  private hexToCalldata(hex: string): string[] {
+    const cleanHex = hex.startsWith('0x') ? hex.slice(2) : hex;
+    const chunks: string[] = [];
+    for (let i = 0; i < cleanHex.length; i += 62) {
+      chunks.push('0x' + cleanHex.slice(i, i + 62));
     }
-
-    // Generate intent commitment
-    const nullifierSecret = generateRandomFieldElement();
-    const intentCommitment = await this.prover.deriveCommitment({
-      amount: '0x' + noteIn.amount.toString(16),
-      assetId: assetOutInfo.id,
-      nullifierSecret,
-      salt: generateRandomFieldElement(),
-    });
-
-    // Generate intent proof
-    const proof = await this.prover.proveIntent({
-      assetIn: '0x' + noteIn.assetId.toString(16),
-      amountIn: '0x' + noteIn.amount.toString(16),
-      assetOut: '0x' + assetOutInfo.id.toString(16),
-      minAmountOut: '0x' + minAmountOut.toString(16),
-      nullifierSecret,
-      deadline,
-    });
-
-    // Submit intent
-    const proofArray = this.hexToCalldata(proof);
-    const intentCall = this.intentMatcher.populate('submit_intent', [
-      intentCommitment,
-      BigInt(deadline),
-      proofArray,
-    ]);
-
-    const tx = await this.account.execute(intentCall);
-    await this.provider.waitForTransaction(tx.transaction_hash);
-
-    // Compute nullifier
-    const nullifier = await this.prover.deriveNullifier({
-      nullifierSecret,
-      serialNumber: noteIn.serialNumber,
-    });
-
-    const receipt: IntentReceipt = {
-      commitment: intentCommitment,
-      nullifier,
-      assetIn: noteIn.assetId,
-      amountIn: noteIn.amount,
-      assetOut: assetOutInfo.id,
-      minAmountOut: minAmountOut,
-      deadline,
-      status: 'pending',
-      submittedAt: Date.now(),
-    };
-
-    await this.noteStore.saveIntent(receipt);
-
-    return receipt;
+    if (chunks.length === 0) chunks.push('0x0');
+    return chunks;
   }
 
-  // ─── HELPERS ──────────────────────────────────────────────────────────────
-
-  /**
-   * Fetch AVNU quote
-   */
   private async fetchAVNUQuote(params: {
     sellTokenAddress: string;
     buyTokenAddress: string;
     sellAmount: bigint;
     takerAddress: string;
-  }): Promise<unknown> {
-    const url = new URL(`${AVNU_API_URL}/swap/v2/quotes`);
-    url.searchParams.set('sellTokenAddress', params.sellTokenAddress);
-    url.searchParams.set('buyTokenAddress', params.buyTokenAddress);
-    url.searchParams.set('sellAmount', params.sellAmount.toString());
-    url.searchParams.set('takerAddress', params.takerAddress);
-
-    const response = await fetch(url.toString());
-    if (!response.ok) {
-      throw new Error(`AVNU API error: ${response.statusText}`);
-    }
-
+  }) {
+    const url = `${AVNU_API_URL}/api/v1/quote`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...params,
+        gasLess: true,
+      }),
+    });
     return response.json();
   }
 
-  /**
-   * Fetch APY from yield protocol
-   */
-  private async fetchProtocolAPY(
-    protocol: 'vesu' | 'uncap' | 'opus'
-  ): Promise<number> {
-    // In production: call actual protocol contract
-    // For now, return placeholder
-    return 0.05; // 5% APY placeholder
-  }
-
-  /**
-   * Convert hex proof to calldata array
-   */
-  private hexToCalldata(hex: string): string[] {
-    // Remove 0x prefix and split into felt252-sized chunks
-    const cleanHex = hex.startsWith('0x') ? hex.slice(2) : hex;
-    const chunkSize = 62; // felt252 is ~62 hex chars
-    const chunks: string[] = [];
-
-    for (let i = 0; i < cleanHex.length; i += chunkSize) {
-      chunks.push('0x' + cleanHex.slice(i, i + chunkSize));
-    }
-
-    return chunks;
-  }
-
-  /**
-   * Get all shielded notes
-   */
-  async getAllNotes(): Promise<ShieldedNote[]> {
-    return this.noteStore.getAllNotes();
-  }
-
-  /**
-   * Get unspent shielded notes only
-   */
-  async getUnspentNotes(): Promise<ShieldedNote[]> {
-    return this.noteStore.getUnspentNotes();
-  }
-
-  /**
-   * Get shielded balance for an asset
-   */
-  async getShieldedBalance(assetId: number): Promise<bigint> {
-    const notes = await this.getUnspentNotes();
-    return notes
-      .filter(n => n.assetId === assetId)
-      .reduce((sum, n) => sum + n.amount, 0n);
-  }
-
-  /**
-   * Get all yield positions
-   */
-  async getAllYieldPositions(): Promise<YieldPosition[]> {
-    return this.noteStore.getAllYieldPositions();
-  }
-
-  /**
-   * Get active (non-claimed) yield positions
-   */
-  async getActiveYieldPositions(): Promise<YieldPosition[]> {
-    return this.noteStore.getActiveYieldPositions();
-  }
-
-  /**
-   * Export backup
-   */
-  async exportBackup(): Promise<Blob> {
-    return this.noteStore.exportBackup();
-  }
-
-  /**
-   * Import backup
-   */
-  async importBackup(file: File): Promise<number> {
-    return this.noteStore.importBackup(file);
-  }
-
-  /**
-   * Get storage statistics
-   */
-  async getStorageStats(): Promise<{
-    notes: number;
-    yieldPositions: number;
-    unspentNotes: number;
-  }> {
-    return this.noteStore.getStats();
+  private async fetchProtocolAPY(protocol: string): Promise<number> {
+    // In production, fetch from actual protocol APIs
+    return 5.5; // Mock
   }
 }
+
+const yieldRouterABI = [
+  {
+    type: 'function',
+    name: 'deposit_shielded_yield',
+    inputs: [
+      { name: 'commitment', type: 'felt252' },
+      { name: 'protocol', type: 'u8' },
+      { name: 'proof', type: 'Span<felt252>' },
+      { name: 'yield_params', type: 'Span<felt252>' },
+    ],
+    outputs: [],
+  },
+] as const;

@@ -1,8 +1,10 @@
 // PHANTOM — Real implementation (no mocks)
+// Fixed: Uses HMAC-SHA512 as specified in audit
 
 import { Account, hash, typedData, ec, num } from 'starknet';
 import { pbkdf2 } from '@noble/hashes/pbkdf2';
-import { sha256 } from '@noble/hashes/sha256';
+import { hmac } from '@noble/hashes/hmac';
+import { sha256, sha512 } from '@noble/hashes/sha512';
 import { gcm } from '@noble/ciphers/aes';
 import { randomBytes } from '@noble/ciphers/webcrypto';
 
@@ -48,7 +50,7 @@ const PHANTOM_TYPED_DATA = {
   },
 };
 
-export class PhantomKeyManager {
+export class MidasKeyManager {
   readonly ivkHex: string;           // Incoming Viewing Key (hex)
   readonly ivkBytes: Uint8Array;     // IVK as bytes for AES-GCM
   readonly spendingKeyHex: string;   // Master spending key
@@ -65,8 +67,8 @@ export class PhantomKeyManager {
    * Flow:
    * 1. Build typed data message (deterministic per chain)
    * 2. Ask wallet to sign it (same signature every time for same wallet)
-   * 3. PBKDF2(signature_bytes, "PHANTOM_IVK", 600000, 32) → IVK
-   * 4. PBKDF2(signature_bytes, "PHANTOM_SK", 600000, 32) → SK
+   * 3. PBKDF2(HMAC-SHA512, signature_bytes, "PHANTOM_IVK", 600000) → IVK
+   * 4. PBKDF2(HMAC-SHA512, signature_bytes, "PHANTOM_SK", 600000) → SK
    */
   static async fromWallet(account: Account): Promise<PhantomKeyManager> {
     const chainId = await account.getChainId();
@@ -102,15 +104,26 @@ export class PhantomKeyManager {
     // Use wallet address as additional salt
     const addressBytes = hexToBytes(account.address);
 
-    // PBKDF2 with 600,000 iterations — slow by design (prevents brute force)
-    const ivk = pbkdf2(sha256, sigBytes, new TextEncoder().encode('PHANTOM_IVK_V1'), {
-      c: 600_000,
-      dkLen: 32,
-    });
-    const sk = pbkdf2(sha256, sigBytes, new TextEncoder().encode('PHANTOM_SK_V1'), {
-      c: 600_000,
-      dkLen: 32,
-    });
+    // PBKDF2 with HMAC-SHA512, 600,000 iterations
+    // FIXED: Use hmac-sha512 instead of sha256
+    const ivk = pbkdf2(
+      hmac(sha512), 
+      sigBytes, 
+      new TextEncoder().encode('PHANTOM_IVK_V1'), 
+      { 
+        c: 600_000,
+        dkLen: 32,
+      }
+    );
+    const sk = pbkdf2(
+      hmac(sha512), 
+      sigBytes, 
+      new TextEncoder().encode('PHANTOM_SK_V1'), 
+      { 
+        c: 600_000,
+        dkLen: 32,
+      }
+    );
 
     return new PhantomKeyManager(ivk, sk);
   }
@@ -121,10 +134,16 @@ export class PhantomKeyManager {
    */
   deriveNoteSpendingKey(commitment: string): Uint8Array {
     const masterSk = hexToBytes(this.spendingKeyHex);
-    return pbkdf2(sha256, masterSk, new TextEncoder().encode(commitment), {
-      c: 1_000,
-      dkLen: 32,
-    });
+    // Use HMAC-SHA512 for note key derivation too
+    return pbkdf2(
+      hmac(sha512), 
+      masterSk, 
+      new TextEncoder().encode(commitment), 
+      { 
+        c: 1_000,
+        dkLen: 32,
+      }
+    );
   }
 }
 
