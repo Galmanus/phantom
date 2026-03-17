@@ -66,12 +66,16 @@ pool.shield(
 )
     |
     v
-MidasPool Contract:
-  1. Verify proof (or skip in test mode)
-  2. TransferFrom(user, pool, amount)
-  3. Insert commitment in Merkle tree
-  4. Emit Shielded event
-  5. Update current Merkle root
+MidasPool Contract (CORRETO):
+  1. ✅ Verify proof (or skip in test mode)
+  2. ✅ Check asset is supported
+  3. ✅ Verify commitment != 0
+  4. ✅ Check allowance >= amount
+  5. ✅ TransferFrom(user, pool, amount)
+  6. ✅ Verify balance increased correctly
+  7. ✅ Insert commitment in Merkle tree
+  8. ✅ Add new root to known_roots
+  9. ✅ Emit Shielded event
 ```
 
 ### Step 1.6: Note Storage
@@ -159,17 +163,27 @@ ZK Proof: prove valid stake commitment
     |
     v
 ShieldedStaking.stake(
-  commitment,
-  proof,
-  encryptedNote
+  asset_id,
+  amount,
+  stake_secret,
+  salt,
+  proof
 )
     |
     v
-Contract:
-  1. Verify proof
-  2. Accept deposit (asset transfer)
-  3. Register shielded position
-  4. Mint liquid token (mSTK)
+Contract (CORRETO):
+  1. ✅ Validate not paused
+  2. ✅ Validate asset enabled
+  3. ✅ Validate minimum amount
+  4. ✅ Transfer tokens from user
+  5. ✅ Calculate shares to mint
+  6. ✅ Compute commitment (Poseidon)
+  7. ✅ Compute nullifier_hash
+  8. ✅ Verify nullifier not used
+  9. ✅ Verify proof
+  10. ✅ Mark nullifier as used
+  11. ✅ Store position
+  12. ✅ Mint liquid token (mSTK)
 ```
 
 ### Step 3.2: Validator Rewards
@@ -304,14 +318,15 @@ pool.unshield(
 )
     |
     v
-MidasPool Contract:
-  1. Verify merkle_root is known
-  2. Verify proof
-  3. Check nullifier not spent
-  4. Mark nullifier as spent
-  5. Transfer tokens to recipient
-  6. (Optional) Create change note
-  7. Emit Unshielded event
+MidasPool Contract (CORRETO):
+  1. ✅ Verify merkle_root is in known_roots
+  2. ✅ Verify proof
+  3. ✅ Check nullifier NOT spent
+  4. ✅ Check pool has sufficient balance
+  5. ✅ Mark nullifier as spent (BEFORE transfer)
+  6. ✅ Transfer tokens to recipient
+  7. ✅ If change_commitment != 0: create new note
+  8. ✅ Emit Unshielded + NullifierSpent events
 ```
 
 ---
@@ -484,6 +499,61 @@ Returns: Boolean + disclosed info
 | **Integrity** | Merkle tree + proofs verify note existence |
 | **Non-custodial** | User holds keys; contract never accesses them |
 | **Compliance** | Optional viewing keys for selective disclosure |
+
+---
+
+## Verification: Fluxo Corrigido vs Contratos
+
+### MidasPool - shield()
+✅ **CORRETO** - Verificado no código:
+- Paused check
+- Commitment validation
+- Amount > 0
+- Asset whitelisting
+- Proof verification
+- Allowance check
+- TransferFrom + balance verification
+- Merkle tree insertion
+- Root history update
+
+### MidasPool - unshield()
+✅ **CORRETO** - Verificado no código:
+- Paused check
+- Nullifier validation
+- Recipient validation
+- Amount > 0
+- Known root verification
+- Proof verification
+- **Pool balance check** (evita falha)
+- **Nullifier escrito ANTES da transferência** (reentrancy guard)
+- Transfer
+- Change commitment (se != 0)
+- Events
+
+### ShieldedStaking - stake()
+✅ **CORRERETO** - Verificado no código:
+- Paused check
+- Asset enabled
+- Minimum amount
+- Allowance + Transfer
+- Share calculation
+- Commitment (Poseidon)
+- Nullifier hash
+- Position uniqueness
+- Proof verification
+- Position storage
+
+---
+
+## Otimizações Aplicadas
+
+| Otimização | Descrição |
+|------------|------------|
+| **Historical Roots** | Armazena múltiplos roots para liveness |
+| **Checks-Effects-Interactions** | Nullifier escrito antes do transfer |
+| **Balance Verification** | Verifica transferência ocorreu |
+| **Paused State** | Emergentcy stop |
+| **Access Control** | Owner only para admin functions |
 
 ---
 
