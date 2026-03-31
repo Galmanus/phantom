@@ -9,6 +9,7 @@ pub mod unshield;  // PLACEHOLDER: Real Stwo proof pending Starknet 0.14.2
 pub mod private_swap;
 pub mod private_yield;
 pub mod compliance;
+pub mod neon_compliance;
 pub mod intent;
 
 #[cfg(feature = "wasm")]

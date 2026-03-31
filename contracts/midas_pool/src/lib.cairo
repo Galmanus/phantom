@@ -14,7 +14,7 @@ trait IMerkleTree<T> {
     fn is_known_root(self: @T, root: felt252) -> bool;
 }
 
-// Verifier interface  
+// Verifier interface
 trait IVerifier<T> {
     fn verify_shield_proof(
         self: @T,
@@ -33,6 +33,15 @@ trait IVerifier<T> {
         proof: Span<felt252>,
     ) -> bool;
 }
+
+// NEON Compliance interface (ZK privacy-preserving compliance gate)
+#[starknet::interface]
+trait INeonCompliance<T> {
+    fn is_compliant(self: @T, user: ContractAddress, level: u8) -> bool;
+}
+
+// Default compliance level required for pool operations
+const COMPLIANCE_LEVEL_BASIC: u8 = 1;
 
 // Supported assets (whitelisted)
 const WBTC_ASSET_ID: u8 = 0;
@@ -93,6 +102,15 @@ mod MidasPool {
         total_unshielded: u256,
         shield_count: u64,
         unshield_count: u64,
+
+        // ============ NEON Compliance Gate ============
+        // Address of the NeonCompliance contract (zero = not set)
+        neon_compliance: ContractAddress,
+        // Whether compliance check is required for shield/unshield
+        // Defaults to false for backward compatibility
+        compliance_required: bool,
+        // Minimum compliance level required (default: BASIC = 1)
+        compliance_level_required: u8,
     }
 
     #[event]
@@ -108,6 +126,8 @@ mod MidasPool {
         Unpaused: Unpaused,
         TestModeChanged: TestModeChanged,
         VerifierUpdated: VerifierUpdated,
+        ComplianceContractUpdated: ComplianceContractUpdated,
+        ComplianceRequiredChanged: ComplianceRequiredChanged,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -174,6 +194,18 @@ mod MidasPool {
         new_verifier: ContractAddress,
     }
 
+    #[derive(Drop, starknet::Event)]
+    struct ComplianceContractUpdated {
+        old_contract: ContractAddress,
+        new_contract: ContractAddress,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct ComplianceRequiredChanged {
+        old_value: bool,
+        new_value: bool,
+    }
+
     #[constructor]
     fn constructor(
         ref self: ContractState,
@@ -193,6 +225,10 @@ mod MidasPool {
         self.root_history_length.write(0);
         
         self.known_roots.write(0, true);
+
+        // Compliance defaults to disabled for backward compatibility
+        self.compliance_required.write(false);
+        self.compliance_level_required.write(super::COMPLIANCE_LEVEL_BASIC);
     }
 
     #[external(v0)]
@@ -206,6 +242,10 @@ mod MidasPool {
             proof: Span<felt252>,
         ) -> (felt252, u32) {
             assert(!self.paused.read(), 'Contract is paused');
+
+            // NEON Compliance gate: if enabled, caller must be compliant
+            self._check_compliance(get_caller_address());
+
             assert(commitment != 0, 'Invalid commitment');
             assert(amount.low > 0 || amount.high > 0, 'Zero amount');
             
@@ -263,6 +303,10 @@ mod MidasPool {
             proof: Span<felt252>,
         ) {
             assert(!self.paused.read(), 'Contract is paused');
+
+            // NEON Compliance gate: if enabled, caller must be compliant
+            self._check_compliance(get_caller_address());
+
             assert(nullifier != 0, 'Invalid nullifier');
             assert(recipient != Zeroable::zero(), 'Invalid recipient');
             assert(amount.low > 0 || amount.high > 0, 'Zero amount');
@@ -382,6 +426,47 @@ mod MidasPool {
             self.emit(VerifierUpdated { old_verifier: old, new_verifier: verifier });
         }
 
+        // ============ NEON Compliance Configuration ============
+
+        fn set_compliance_contract(ref self: ContractState, address: ContractAddress) {
+            assert(get_caller_address() == self.owner.read(), 'Only owner');
+            assert(address != Zeroable::zero(), 'Invalid compliance address');
+
+            let old = self.neon_compliance.read();
+            self.neon_compliance.write(address);
+            self.emit(ComplianceContractUpdated {
+                old_contract: old,
+                new_contract: address,
+            });
+        }
+
+        fn set_compliance_required(ref self: ContractState, required: bool) {
+            assert(get_caller_address() == self.owner.read(), 'Only owner');
+
+            // If enabling, compliance contract must be set
+            if required {
+                assert(
+                    self.neon_compliance.read() != Zeroable::zero(),
+                    'Set compliance contract first'
+                );
+            }
+
+            let old = self.compliance_required.read();
+            self.compliance_required.write(required);
+            self.emit(ComplianceRequiredChanged {
+                old_value: old,
+                new_value: required,
+            });
+        }
+
+        fn is_compliance_required(self: @ContractState) -> bool {
+            self.compliance_required.read()
+        }
+
+        fn get_compliance_contract(self: @ContractState) -> ContractAddress {
+            self.neon_compliance.read()
+        }
+
         fn get_pool_balance(self: @ContractState, asset: ContractAddress) -> u256 {
             self.pool_balances.read(asset)
         }
@@ -467,6 +552,22 @@ mod MidasPool {
             verifier.verify_unshield_proof(nullifier, merkle_root, amount, recipient, proof)
         }
 
+        /// Check NEON compliance for a user. No-op if compliance is disabled.
+        fn _check_compliance(self: @ContractState, user: ContractAddress) {
+            if !self.compliance_required.read() {
+                return;
+            }
+
+            let compliance_addr = self.neon_compliance.read();
+            assert(compliance_addr != Zeroable::zero(), 'Compliance contract not set');
+
+            let compliance = INeonComplianceDispatcher {
+                contract_address: compliance_addr
+            };
+            let level = self.compliance_level_required.read();
+            assert(compliance.is_compliant(user, level), 'User not compliant');
+        }
+
         fn _add_root_to_history(ref self: ContractState, root: felt252) {
             let current_length = self.root_history_length.read();
             let max = self.max_root_history.read();
@@ -495,6 +596,10 @@ trait IMidasPool<T> {
     fn unpause(ref self: T);
     fn set_test_mode(ref self: T, enabled: bool);
     fn set_verifier(ref self: T, verifier: ContractAddress);
+    fn set_compliance_contract(ref self: T, address: ContractAddress);
+    fn set_compliance_required(ref self: T, required: bool);
+    fn is_compliance_required(self: @T) -> bool;
+    fn get_compliance_contract(self: @T) -> ContractAddress;
     fn get_pool_balance(self: @T, asset: ContractAddress) -> u256;
     fn get_total_shielded(self: @T) -> u256;
     fn get_total_unshielded(self: @T) -> u256;
@@ -516,6 +621,10 @@ trait IMerkleTreeDispatcher<T> {
 trait IVerifierDispatcher<T> {
     fn verify_shield_proof(self: @T, commitment: felt252, asset: ContractAddress, amount: u256, proof: Span<felt252>) -> bool;
     fn verify_unshield_proof(self: @T, nullifier: felt252, merkle_root: felt252, amount: u256, recipient: ContractAddress, proof: Span<felt252>) -> bool;
+}
+
+trait INeonComplianceDispatcher<T> {
+    fn is_compliant(self: @T, user: ContractAddress, level: u8) -> bool;
 }
 
 const WBTC_ASSET_ID: u8 = 0;
