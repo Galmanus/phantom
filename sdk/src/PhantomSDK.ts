@@ -33,6 +33,7 @@ import type {
 } from './types';
 import { generateRandomFieldElement } from './storage/encryption';
 import { encryptNoteWithIVK, PhantomKeyManager } from './key-derivation';
+import type { NeonComplianceClient } from './NeonCompliance';
 
 export class PhantomSDK {
   private provider: RpcProvider;
@@ -42,6 +43,7 @@ export class PhantomSDK {
   private intentMatcher: Contract;
   private noteStore: NoteStore;
   private prover: ProverWorkerClient;
+  private neonCompliance?: NeonComplianceClient;
 
   constructor(config: PhantomSDKConfig) {
     // Initialize provider with real RPC
@@ -92,6 +94,38 @@ export class PhantomSDK {
   }
 
   /**
+   * Attach a NEON compliance client to enable compliance-gated transactions.
+   *
+   * When set, {@link shield} and {@link unshield} will verify that the
+   * connected account holds a valid compliance attestation before proceeding.
+   *
+   * @param client - An initialised {@link NeonComplianceClient} instance.
+   */
+  setComplianceClient(client: NeonComplianceClient): void {
+    this.neonCompliance = client;
+  }
+
+  /**
+   * Verify that the connected account is compliant.
+   * No-op when no compliance client is attached.
+   *
+   * @throws {Error} If the compliance client is set and the account is not compliant.
+   */
+  private async assertCompliance(): Promise<void> {
+    if (!this.neonCompliance) {
+      return;
+    }
+
+    const allowed = await this.neonCompliance.canTransact(this.account.address);
+    if (!allowed) {
+      throw new Error(
+        'NEON compliance check failed: account does not hold a valid compliance attestation. ' +
+        'Submit a compliance proof via NeonComplianceClient before transacting.',
+      );
+    }
+  }
+
+  /**
    * Encrypt note data for on-chain recovery
    * 
    * OBSTACLE 4 SOLUTION: The encrypted_note is emitted in the Shielded event,
@@ -128,6 +162,9 @@ export class PhantomSDK {
     onProgress?: (step: ShieldStep, message: string) => void;
   }): Promise<ShieldedNote> {
     const { asset, amount, onProgress } = params;
+
+    // NEON compliance gate — blocks transaction if attestation is missing or expired
+    await this.assertCompliance();
 
     const assetInfo = getAssetBySymbol(asset);
     if (!assetInfo) {
@@ -220,7 +257,7 @@ export class PhantomSDK {
     };
 
     // Encrypt note for on-chain recovery (OBSTACLE 4 solution)
-    const encryptedNote = this.encryptNoteForRecovery(note);
+    const encryptedNote = await this.encryptNoteForRecovery(note);
 
     // Call shield function with encrypted note
     const proofArray = this.hexToCalldata(proof);
@@ -252,6 +289,9 @@ export class PhantomSDK {
     onProgress?: (step: UnshieldStep, message: string) => void;
   }): Promise<string> {
     const { note, recipient, amount, onProgress } = params;
+
+    // NEON compliance gate — blocks transaction if attestation is missing or expired
+    await this.assertCompliance();
 
     if (amount > note.amount) {
       throw new Error('Amount exceeds note balance');

@@ -2,6 +2,8 @@
  * MIDAS Protocol Constants
  */
 
+export type FieldElement = string;
+
 // Contract addresses (should be set via environment variables)
 export const MIDAS_POOL_ADDRESS = process.env.NEXT_PUBLIC_MIDAS_POOL_ADDRESS || '';
 export const MIDAS_MERKLE_ADDRESS = process.env.NEXT_PUBLIC_MIDAS_MERKLE_ADDRESS || '';

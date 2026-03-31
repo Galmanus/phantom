@@ -102,8 +102,8 @@ describe('NoteStore', () => {
       expect(retrieved?.spent).toBe(true);
     });
 
-    it('should handle marking non-existent note as spent gracefully', async () => {
-      await expect(store.markNoteSpent('0xnonexistent')).resolves.not.toThrow();
+    it('should throw when marking non-existent note as spent', async () => {
+      await expect(store.markNoteSpent('0xnonexistent')).rejects.toThrow();
     });
   });
 
@@ -124,8 +124,8 @@ describe('NoteStore', () => {
       const note = createTestNote('0xcommitment1');
       await store.saveNote(note);
 
-      const backup = await store.exportEncryptedBackup();
-      
+      const backup = await store.exportBackup();
+
       expect(backup).toBeInstanceOf(Blob);
       expect(backup.type).toBe('application/json');
     });
@@ -134,17 +134,17 @@ describe('NoteStore', () => {
       const note = createTestNote('0xcommitment1');
       await store.saveNote(note);
 
-      const backup = await store.exportEncryptedBackup();
+      const backup = await store.exportBackup();
       const file = new File([backup], 'backup.json');
 
       // Create new store with same password
       const store2 = new NoteStore(password);
       await store2.initialize();
 
-      const imported = await store2.importFromBackup(file);
-      
+      const imported = await store2.importBackup(file);
+
       expect(imported).toBeGreaterThanOrEqual(0);
-      
+
       const retrieved = await store2.getNote('0xcommitment1');
       expect(retrieved).toBeDefined();
     });
@@ -153,26 +153,26 @@ describe('NoteStore', () => {
       const note = createTestNote('0xcommitment1');
       await store.saveNote(note);
 
-      const backup = await store.exportEncryptedBackup();
+      const backup = await store.exportBackup();
       const file = new File([backup], 'backup.json');
 
       // Try to import with wrong password
       const wrongStore = new NoteStore('wrong-password');
       await wrongStore.initialize();
 
-      await expect(wrongStore.importFromBackup(file)).rejects.toThrow();
+      await expect(wrongStore.importBackup(file)).rejects.toThrow();
     });
 
     it('should not duplicate notes on import', async () => {
       const note = createTestNote('0xcommitment1');
       await store.saveNote(note);
 
-      const backup = await store.exportEncryptedBackup();
+      const backup = await store.exportBackup();
       const file = new File([backup], 'backup.json');
 
       // Import same backup twice
-      await store.importFromBackup(file);
-      const imported2 = await store.importFromBackup(file);
+      await store.importBackup(file);
+      const imported2 = await store.importBackup(file);
 
       // Second import should not add duplicates
       expect(imported2).toBe(0);

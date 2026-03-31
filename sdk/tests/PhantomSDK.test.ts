@@ -41,7 +41,7 @@ describe('PhantomSDK', () => {
 
     it('should initialize NoteStore with encryption', async () => {
       // NoteStore should be initialized
-      expect(sdk.getAllNotes()).toBeDefined();
+      expect(await sdk.getAllNotes()).toBeDefined();
     });
 
     it('should initialize prover worker', async () => {

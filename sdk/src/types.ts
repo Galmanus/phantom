@@ -139,6 +139,9 @@ export interface PhantomSDKConfig {
   chainId?: string;
 }
 
+// Alias for MIDAS SDK
+export type MidasSDKConfig = PhantomSDKConfig;
+
 // Event types
 export interface ShieldEvent {
   type: 'Shielded';

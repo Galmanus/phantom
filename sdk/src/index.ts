@@ -7,3 +7,5 @@ export { NoteStore } from './storage/NoteStore';
 export { PhantomKeyManager as MidasKeyManager, encryptNoteWithIVK, decryptNoteWithIVK } from './key-derivation';
 export * from './constants';
 export * from './types';
+export { NeonComplianceClient, ComplianceLevel } from './NeonCompliance';
+export type { NeonComplianceProof, ComplianceStatus } from './NeonCompliance';

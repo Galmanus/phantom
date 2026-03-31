@@ -217,7 +217,7 @@ export class MidasSDK {
     };
 
     // Encrypt note for on-chain recovery
-    const encryptedNote = this.encryptNoteForRecovery(note);
+    const encryptedNote = await this.encryptNoteForRecovery(note);
 
     // Call shield function
     const proofArray = this.hexToCalldata(proof);
@@ -500,11 +500,15 @@ export class MidasSDK {
     await this.noteStore.markNoteSpent(note.commitment);
 
     const position: YieldPosition = {
-      commitment: depositCommitment,
-      amount: note.amount,
+      depositCommitment,
       protocol,
-      apy,
-      depositedAt: Date.now(),
+      protocolId,
+      principalAmount: note.amount,
+      assetId: note.assetId,
+      yieldPositionSecret,
+      depositTimestamp: Date.now(),
+      lastClaimTimestamp: 0,
+      claimed: false,
     };
 
     return position;
