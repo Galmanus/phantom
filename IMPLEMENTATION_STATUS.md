@@ -76,8 +76,11 @@ PHANTOM is the first **Private BTC Yield Manager** on Starknet, built on **STRK2
 | **Unshield functionality** | Not implemented | No UI page |
 | **Yield deposit flow** | Incomplete | Shield works but yield routing is PLACEHOLDER |
 | **Compliance proofs** | PLACEHOLDER | Shows IVK, real proofs need Starknet 0.14.2 |
-| **TypeScript errors** | Many pre-existing | Not blocking Next.js build but need fixing |
-| **Tests** | Some broken | NoteStore.test.ts references non-existent methods |
+| **TypeScript errors** | ✅ Fixed | Missing FieldElement export, missing await, wrong YieldPosition fields — all resolved |
+| **Tests** | ✅ Fixed | NoteStore.test.ts method names corrected, assertion logic fixed |
+| **NEON Compliance** | ✅ Integrated | MidasPool contract + circuits now support NEON compliance gate |
+| **Staking page** | Coming Soon | Added wallet gate and "Coming Soon" badge |
+| **Yield page** | ✅ Fixed | Hard-coded asset replaced with dynamic selection |
 
 ---
 
