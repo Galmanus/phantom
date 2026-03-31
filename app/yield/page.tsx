@@ -129,7 +129,7 @@ export default function YieldPage() {
     try {
       // 1. Shield the asset (creates a ShieldedNote)
       const note = await shield(
-        'WBTC', // simplified — real impl: use selectedStrategy.asset
+        selectedStrategy.asset,
         amountSats,
         (step, message) => {
           console.debug(`[Yield] ${step}: ${message}`)

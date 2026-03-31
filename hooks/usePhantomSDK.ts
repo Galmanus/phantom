@@ -1,4 +1,6 @@
 // hooks/usePhantomSDK.ts
+// @deprecated — This hook is no longer used. All pages import from usePhantomSDKReal instead.
+// Kept for reference only. Do not use in new code.
 "use client";
 
 import { useMemo } from "react";

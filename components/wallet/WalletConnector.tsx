@@ -28,11 +28,6 @@ export function WalletConnector() {
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Debug: log connectors
-  useEffect(() => {
-    console.log('[WalletConnector] Connectors:', connectors);
-  }, [connectors]);
-
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -57,7 +52,6 @@ export function WalletConnector() {
           <WalletSelectionModal
             connectors={connectors}
             onConnect={(connector) => {
-              console.log('[WalletConnector] Connecting with:', connector.id);
               connect({ connector });
               setShowModal(false);
             }}
@@ -121,9 +115,6 @@ function WalletSelectionModal({
   onConnect: (connector: any) => void;
   onClose: () => void;
 }) {
-  // Debug: log connectors in modal
-  console.log('[WalletSelectionModal] Rendering with connectors:', connectors.length);
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-void/80 backdrop-blur-sm" onClick={onClose}>
       <div className="bg-panel border border-border rounded-2xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>

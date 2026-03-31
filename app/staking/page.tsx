@@ -1,8 +1,12 @@
 'use client'
 
 import Link from 'next/link'
+import { useAccount } from '@starknet-react/core'
+import { WalletConnector } from '@/components/wallet/WalletConnector'
 
 export default function Staking() {
+  const { account } = useAccount()
+
   return (
     <div className="min-h-screen py-20">
       <div className="max-w-4xl mx-auto px-6">
@@ -13,7 +17,18 @@ export default function Staking() {
           <p className="text-lg text-secondary max-w-2xl mx-auto">
             Stake your BTC with complete privacy. Your validator rewards stay hidden while earning yield.
           </p>
+          <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber/10 border border-amber/30">
+            <span className="text-amber font-mono text-sm font-bold uppercase tracking-wider">Coming Soon</span>
+          </div>
         </div>
+
+        {/* Wallet Gate */}
+        {!account && (
+          <div className="bg-panel border border-subtle rounded-2xl p-8 text-center mb-8">
+            <p className="text-secondary mb-4">Connect your wallet to view staking details</p>
+            <WalletConnector />
+          </div>
+        )}
 
         {/* Staking Stats */}
         <div className="grid md:grid-cols-3 gap-6 mb-12">
@@ -59,9 +74,12 @@ export default function Staking() {
             </div>
 
             <div className="flex gap-3 pt-4">
-              <Link href="/shield" className="btn-primary flex-1 text-center">
-                Stake Now
-              </Link>
+              <button
+                disabled
+                className="btn-primary flex-1 text-center opacity-50 cursor-not-allowed"
+              >
+                Stake Now (Coming Soon)
+              </button>
             </div>
           </div>
 
